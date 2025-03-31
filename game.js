@@ -9,6 +9,7 @@ const HEIGHT = canvas.height;
 let towers = [];
 let enemies = [];
 let projectiles = [];
+let pulses = []; // New: array to hold the splash tower's pulse effects
 
 let currentRound = 0;
 let inRound = false;
@@ -26,14 +27,13 @@ const towerCosts = {
   "smart": 120
 };
 
-let placingTowerType = null;   // type selected from shop (eg. "basic", "sniper", "splash", etc.)
-let previewPos = null;         // mouse position for showing placement preview
-let selectedTower = null;      // tower currently selected (for upgrades & deletion)
+let placingTowerType = null; // type selected from shop (e.g., "basic", "sniper", etc.)
+let previewPos = null;       // mouse position for showing tower placement preview
+let selectedTower = null;    // currently selected tower (for upgrades/deletion)
 
 // Frame counter (used for enemy special attacks)
 let frameCount = 0;
 
-// DOM Elements for Toolbar UI
 const toolbarContent = document.getElementById("toolbar-content");
 const startRoundButton = document.getElementById("startRoundButton");
 
@@ -51,15 +51,15 @@ const PATH = [
 *****************************/
 
 /*–– Enemy Class ––  
-   Types:
+   Enemy types:
     • basic (red)
     • fast (orange)
     • tank (brown)
-    • regenerator (teal): slowly heals and “attacks” towers.
+    • regenerator (teal): slowly heals itself and “attacks” towers by slowing them.
 */
 class Enemy {
   constructor(type) {
-    this.path = [...PATH]; // copy path
+    this.path = [...PATH]; // copy of the enemy path
     this.pos = { ...this.path[0] };
     this.targetIndex = 1;
     this.type = type;
@@ -88,21 +88,20 @@ class Enemy {
       this.radius = 10;
       this.color = "teal";
       this.coinReward = 25;
-      // For regeneration and tower attack
+      // Special ability: attack towers every so often.
       this.attackCooldown = 180; // frames between special attacks
       this.lastAttack = -180;
     }
     this.health = this.maxHealth;
     this.baseSpeed = this.speed;
-    this.slowTimer = 0; // if slowed (from slow projectile), counts down
+    this.slowTimer = 0; // in case enemy gets slowed
   }
   
   update() {
-    // Regenerator-specific behaviors: heal and shoot towers.
+    // Regenerator enemy heals and attempts to slow nearby towers.
     if (this.type === "regenerator") {
-      // Regenerate health slowly (up to maxHealth)
+      // Heal slowly (but not above maxHealth)
       this.health = Math.min(this.health + 0.2, this.maxHealth);
-      // Every attackCooldown, attempt to slow a nearby tower
       if (frameCount - this.lastAttack >= this.attackCooldown) {
         let nearestTower = null;
         let minDist = Infinity;
@@ -114,13 +113,13 @@ class Enemy {
           }
         }
         if (nearestTower) {
-          nearestTower.attackSlowTimer = 90; // 1.5 seconds at 60fps
+          nearestTower.attackSlowTimer = 90; // slows tower for 1.5 seconds (at 60fps)
           this.lastAttack = frameCount;
         }
       }
     }
     
-    // Use effective speed if slowed
+    // Apply slow effect if active.
     let effectiveSpeed = this.baseSpeed;
     if (this.slowTimer > 0) {
       effectiveSpeed *= 0.5;
@@ -149,7 +148,7 @@ class Enemy {
     ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
     
-    // Draw health bar above enemy
+    // Health bar above enemy.
     const barWidth = 20, barHeight = 4;
     const healthRatio = this.health / this.maxHealth;
     ctx.fillStyle = "black";
@@ -160,13 +159,12 @@ class Enemy {
 }
 
 /*–– Tower (Defender) Class ––
-   Existing types: basic, sniper.
-   New types:
-    • splash – Fire a projectile that does area damage.
-    • slow – Fire a projectile that slows enemies.
-    • smart – Long range with shot prediction.
-    
-   Towers have three upgrade branches (your upgrade logic remains similar).
+   Tower types:
+    • basic – moderate range/damage.
+    • sniper – longer range, higher damage.
+    • splash – creates an expanding pulse effect.
+    • slow – fires a projectile that slows enemies.
+    • smart – long range with shot prediction.
 */
 class Tower {
   constructor(pos, type) {
@@ -176,7 +174,7 @@ class Tower {
     this.timer = 0;
     this.maxUpgrades = 3;
     this.specialAbilityUnlocked = false;
-    this.attackSlowTimer = 0; // if a regenerator enemy “slows” the tower
+    this.attackSlowTimer = 0; // if tower is slowed by a regenerator
     
     if (type === "basic") {
       this.range = 100;
@@ -191,7 +189,7 @@ class Tower {
     } else if (type === "splash") {
       this.range = 120;
       this.damage = 25;
-      this.cooldown = 80;
+      this.cooldown = 300; // every 5 seconds (300 frames)
       this.color = "green";
     } else if (type === "slow") {
       this.range = 80;
@@ -210,13 +208,13 @@ class Tower {
   update() {
     if (this.timer > 0) this.timer--;
     
-    // If the tower is slowed from an enemy attack, skip firing this frame.
+    // If tower is slowed by a regenerator attack, skip this update cycle.
     if (this.attackSlowTimer > 0) {
       this.attackSlowTimer--;
       return;
     }
     
-    // Look for the nearest enemy within range
+    // Look for the nearest enemy within range.
     let target = null;
     let minDist = Infinity;
     for (let enemy of enemies) {
@@ -228,34 +226,33 @@ class Tower {
         target = enemy;
       }
     }
+    
     if (target && this.timer <= 0) {
-      // Fire differently based on tower type:
-      if (this.type === "smart") {
-        // Calculate a predicted target position
+      // Firing behavior depends on tower type.
+      if (this.type === "splash") {
+        // Create a pulse effect instead of a moving projectile.
+        pulses.push(new Pulse(this.pos, this.range, this.damage, 300));
+      } else if (this.type === "smart") {
+        const speed = 8;
         const dx = target.pos.x - this.pos.x;
         const dy = target.pos.y - this.pos.y;
         const distance = Math.hypot(dx, dy);
-        const t = distance / 8; // projectile travel time (speed = 8)
-        // Determine target’s direction (based on next waypoint)
+        const t = distance / speed; // estimated travel time
         const waypoint = target.path[target.targetIndex] || target.pos;
         const dx_enemy = waypoint.x - target.pos.x;
         const dy_enemy = waypoint.y - target.pos.y;
         const dEnemy = Math.hypot(dx_enemy, dy_enemy) || 1;
-        const predictFactor = t; 
-        const predictedPos = { 
+        const predictFactor = t;
+        const predictedPos = {
           x: target.pos.x + (dx_enemy / dEnemy) * predictFactor,
           y: target.pos.y + (dy_enemy / dEnemy) * predictFactor
         };
-        // Create a dummy target to aim for with the projectile.
-        const smartTarget = { pos: predictedPos, radius: target.radius };
-        projectiles.push(new Projectile(this.pos, smartTarget, this.damage, 8));
-      } else if (this.type === "splash") {
-        // Projectile with splash effect
-        projectiles.push(new Projectile(this.pos, target, this.damage, 5, "splash"));
+        // Use the predicted position for setting velocity, but track the real enemy.
+        projectiles.push(new Projectile(this.pos, target, this.damage, speed, "smart", predictedPos));
       } else if (this.type === "slow") {
         projectiles.push(new Projectile(this.pos, target, this.damage, 5, "slow"));
       } else {
-        // For basic & sniper towers
+        // For basic & sniper towers.
         const bulletSpeed = (this.type === "sniper") ? 8 : 5;
         projectiles.push(new Projectile(this.pos, target, this.damage, bulletSpeed));
       }
@@ -276,7 +273,7 @@ class Tower {
       ctx.stroke();
     }
     
-    // Display upgrade level
+    // Display the upgrade level.
     ctx.fillStyle = "white";
     ctx.font = "16px Arial";
     ctx.textAlign = "center";
@@ -284,7 +281,7 @@ class Tower {
     ctx.fillText(this.level, this.pos.x, this.pos.y);
   }
   
-  // Upgrade tower stats. (The actual cost deduction is handled externally.)
+  // Upgrade the tower’s stats (actual cost deduction is handled externally).
   upgrade(stat) {
     if (this.level < this.maxUpgrades) {
       if (stat === "damage") {
@@ -296,7 +293,6 @@ class Tower {
       }
       this.level++;
     } else if (!this.specialAbilityUnlocked) {
-      // Final upgrade: boost all stats and unlock a special ability.
       this.specialAbilityUnlocked = true;
       this.damage += 50;
       this.range += 50;
@@ -307,20 +303,20 @@ class Tower {
 }
 
 /*–– Projectile Class ––
-   Optionally accepts a type:
-    • normal (default)
-    • splash – on hit, deals area damage.
-    • slow – on hit, applies a slow effect.
+   Now accepts an optional predicted position (used by smart towers).
 */
 class Projectile {
-  constructor(startPos, target, damage, speed, projType = "normal") {
+  constructor(startPos, target, damage, speed, projType = "normal", predictedPos = null) {
     this.pos = { ...startPos };
     this.target = target;
     this.damage = damage;
     this.speed = speed;
     this.projType = projType;
-    const dx = target.pos.x - startPos.x;
-    const dy = target.pos.y - startPos.y;
+    
+    // For smart projectiles, aim toward the predicted position if given.
+    const aimPos = (projType === "smart" && predictedPos) ? predictedPos : target.pos;
+    const dx = aimPos.x - startPos.x;
+    const dy = aimPos.y - startPos.y;
     const dist = Math.hypot(dx, dy);
     if (dist) {
       this.dx = dx / dist;
@@ -336,25 +332,9 @@ class Projectile {
   update() {
     this.pos.x += this.dx * this.speed;
     this.pos.y += this.dy * this.speed;
-    // Check collision against the target.
+    // Check collision with the actual enemy target.
     if (Math.hypot(this.target.pos.x - this.pos.x, this.target.pos.y - this.pos.y) < this.radius + this.target.radius) {
-      if (this.projType === "splash") {
-        // Full damage on main target.
-        this.target.health -= this.damage;
-        // Splash damage (50%) to nearby enemies.
-        for (let enemy of enemies) {
-          const d = Math.hypot(enemy.pos.x - this.target.pos.x, enemy.pos.y - this.target.pos.y);
-          if (enemy !== this.target && d < 30) {
-            enemy.health -= this.damage * 0.5;
-          }
-        }
-      } else if (this.projType === "slow") {
-        this.target.health -= this.damage;
-        // Apply slow effect for 90 frames (1.5 seconds at 60fps)
-        this.target.slowTimer = 90;
-      } else {
-        this.target.health -= this.damage;
-      }
+      this.target.health -= this.damage;
       this.active = false;
     }
   }
@@ -364,6 +344,53 @@ class Projectile {
     ctx.beginPath();
     ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
+  }
+}
+
+/*–– Pulse Class ––
+   Used exclusively by splash towers.
+   An expanding outline that, as it grows, damages enemies it passes.
+*/
+class Pulse {
+  constructor(center, maxRadius, damage, duration = 300) {
+    this.center = { ...center };
+    this.maxRadius = maxRadius;
+    this.damage = damage;
+    this.duration = duration; // duration in frames (300 frames = 5 seconds)
+    this.frame = 0;
+    this.hitEnemies = new Set(); // so each enemy is damaged only once per pulse cycle
+  }
+  
+  update() {
+    this.frame++;
+    // Calculate current radius (linearly expanding).
+    this.currentRadius = (this.frame / this.duration) * this.maxRadius;
+    
+    // Check for enemies within a small tolerance around the pulse ring.
+    const tolerance = 5;
+    for (let enemy of enemies) {
+      const d = Math.hypot(enemy.pos.x - this.center.x, enemy.pos.y - this.center.y);
+      if (d >= this.currentRadius - tolerance && d <= this.currentRadius + tolerance) {
+        if (!this.hitEnemies.has(enemy)) {
+          enemy.health -= this.damage;
+          this.hitEnemies.add(enemy);
+        }
+      }
+    }
+  }
+  
+  draw() {
+    // Fade out over time.
+    const alpha = 1 - (this.frame / this.duration);
+    ctx.strokeStyle = `rgba(0,128,0,${alpha})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(this.center.x, this.center.y, this.currentRadius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  
+  isDone() {
+    return this.frame >= this.duration;
   }
 }
 
@@ -378,9 +405,9 @@ function startRound() {
   updateToolbar();
 }
 
-// Returns an enemy type based on the current round.
-// Rounds 1-2: only basic.
-// Rounds 3-4: basic, fast, and tank.
+// Returns enemy type based on current round:
+// Rounds 1-2: basic only.
+// Rounds 3-4: basic, fast, tank.
 // Rounds 5+: include regenerator.
 function randomEnemyType() {
   if (currentRound < 3) return "basic";
@@ -401,14 +428,14 @@ function randomEnemyType() {
       TOOLBAR (UI) FUNCTIONS
 *****************************/
 function updateToolbar() {
-  // Build toolbar content – include currency at the top.
+  // Build toolbar HTML (show current currency).
   let html = `<div class="toolbar-header">
                   <h3>Defender Shop</h3>
                   <div><strong>Currency:</strong> $${currency}</div>
                </div>`;
   
   if (selectedTower) {
-    // Show tower details and upgrade options.
+    // Tower options and upgrades.
     html = `<div class="toolbar-header">
               <h3>Defender Options</h3>
               <div><strong>Currency:</strong> $${currency}</div>
@@ -430,8 +457,6 @@ function updateToolbar() {
             <button id="deleteButton">Delete</button>
             <button id="cancelSelectionButton">Cancel</button>`;
     toolbarContent.innerHTML = html;
-    
-    // Wire up upgrade buttons with cost checking.
     if (selectedTower.level < selectedTower.maxUpgrades) {
       document.getElementById("upgradeDamage").addEventListener("click", () => {
         attemptUpgrade(selectedTower, "damage");
@@ -456,9 +481,8 @@ function updateToolbar() {
       selectedTower = null;
       updateToolbar();
     });
-    
   } else {
-    // Shop view: show all tower types including new ones and display their price.
+    // Shop view: list all tower types with prices.
     html += `
       <button class="shop-item" data-type="basic">Basic Defender ($50)</button>
       <button class="shop-item" data-type="sniper">Sniper Defender ($75)</button>
@@ -474,14 +498,13 @@ function updateToolbar() {
     });
   }
   
-  // Show or hide the Start Round button.
+  // Show/hide the Start Round button based on whether a round is active.
   startRoundButton.style.display = inRound ? "none" : "block";
 }
 
 /*****************************
          ATTEMPT UPGRADE
 *****************************/
-// Attempts an upgrade and deducts currency.
 function attemptUpgrade(tower, stat) {
   let cost = (tower.level < tower.maxUpgrades) ? 40 : 60;
   if (currency >= cost) {
@@ -496,12 +519,10 @@ function attemptUpgrade(tower, stat) {
 /*****************************
        EVENT HANDLERS
 *****************************/
-// Start Round button
 startRoundButton.addEventListener("click", () => {
   if (!inRound) startRound();
 });
 
-// Update tower placement preview
 canvas.addEventListener("mousemove", (e) => {
   const rect = canvas.getBoundingClientRect();
   previewPos = {
@@ -510,12 +531,10 @@ canvas.addEventListener("mousemove", (e) => {
   };
 });
 
-// Clear preview when mouse leaves the canvas.
 canvas.addEventListener("mouseleave", () => {
   previewPos = null;
 });
 
-// Mouse click on canvas: select tower or place new one.
 canvas.addEventListener("click", (e) => {
   const rect = canvas.getBoundingClientRect();
   const clickPos = {
@@ -528,7 +547,7 @@ canvas.addEventListener("click", (e) => {
     if (Math.hypot(clickPos.x - tower.pos.x, clickPos.y - tower.pos.y) <= tower.radius) {
       selectedTower = tower;
       clickedOnTower = true;
-      placingTowerType = null; // cancel new placement if tower selected
+      placingTowerType = null;
       updateToolbar();
       break;
     }
@@ -536,7 +555,6 @@ canvas.addEventListener("click", (e) => {
   
   if (!clickedOnTower) {
     if (placingTowerType) {
-      // Check currency before placing a new tower.
       const cost = towerCosts[placingTowerType];
       if (currency >= cost) {
         currency -= cost;
@@ -547,7 +565,6 @@ canvas.addEventListener("click", (e) => {
       placingTowerType = null;
       updateToolbar();
     } else {
-      // Deselect any selected tower.
       selectedTower = null;
       updateToolbar();
     }
@@ -577,7 +594,7 @@ function gameLoop() {
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   drawPath();
   
-  // Spawn enemies if round is active.
+  // Spawn enemies if a round is active.
   if (inRound && enemiesToSpawn > 0) {
     enemySpawnTimer++;
     if (enemySpawnTimer >= 60) {
@@ -596,7 +613,12 @@ function gameLoop() {
   // Remove inactive projectiles.
   projectiles = projectiles.filter(p => p.active);
   
-  // Process enemies: add coin reward if killed and reduce health if they finish the path.
+  // Update and draw pulses; remove pulses which are done.
+  pulses.forEach(pulse => pulse.update());
+  pulses = pulses.filter(pulse => !pulse.isDone());
+  pulses.forEach(pulse => pulse.draw());
+  
+  // Process enemies: reward currency on kills, reduce health if enemy escapes.
   for (let i = enemies.length - 1; i >= 0; i--) {
     let enemy = enemies[i];
     if (enemy.health <= 0) {
@@ -608,7 +630,7 @@ function gameLoop() {
     }
   }
   
-  // End round if complete.
+  // End round when all enemies are spawned and eliminated.
   if (inRound && enemiesToSpawn === 0 && enemies.length === 0) {
     inRound = false;
     updateToolbar();
@@ -648,7 +670,7 @@ function gameLoop() {
     ctx.stroke();
   }
   
-  // Draw HUD (Health, Round, Currency)
+  // Draw HUD (Health, Round, Currency).
   ctx.fillStyle = "black";
   ctx.font = "20px Arial";
   ctx.textAlign = "left";
