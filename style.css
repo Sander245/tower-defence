@@ -8,3 +8,6 @@ body { background-color: #eee; font-family: Arial, sans-serif; }
 #toolbar button { display: block; margin: 5px auto; padding: 5px 10px; cursor: pointer; font-size: 14px; }
 .shop-item { width: 90%; margin: 5px auto; padding: 8px; background-color: #fff; border: 1px solid #888; border-radius: 3px; cursor: pointer; transition: background-color 0.2s; }
 .shop-item:hover { background-color: #f0f0f0; }
+#cheatPanel { /* This element is created dynamically */
+  font-family: Arial, sans-serif;
+}
