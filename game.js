@@ -6,10 +6,7 @@ const canvas = document.getElementById("gameCanvas"),
       WIDTH = canvas.width,
       HEIGHT = canvas.height;
 
-let towers = [],
-    enemies = [],
-    projectiles = [],
-    pulses = [];
+let towers = [], enemies = [], projectiles = [], pulses = [];
 
 let currentRound = 0,
     inRound = false,
@@ -21,6 +18,8 @@ let currentRound = 0,
     previewPos = null,
     selectedTower = null,
     frameCount = 0;
+
+let gameSpeed = 1; // Global multiplier; cheat "set gamespeed" can change this.
 
 const towerCosts = {
   "basic": 50,
@@ -44,7 +43,7 @@ const PATH = [
 /*****************************
          CLASSES
 *****************************/
-// Enemy types: basic, fast, tank, regenerator
+// Enemy: types: basic (red), fast, tank, regenerator.
 class Enemy {
   constructor(type) {
     this.path = [...PATH];
@@ -52,7 +51,7 @@ class Enemy {
     this.targetIndex = 1;
     this.type = type;
     if (type === "basic") {
-      this.speed = 0.8; this.maxHealth = 90; this.radius = 10;
+      this.speed = 0.6; this.maxHealth = 90; this.radius = 10;
       this.color = "red"; this.coinReward = 10;
     } else if (type === "fast") {
       this.speed = 1.4; this.maxHealth = 70; this.radius = 8;
@@ -87,33 +86,43 @@ class Enemy {
       let target = this.path[this.targetIndex],
           dx = target.x - this.pos.x, dy = target.y - this.pos.y,
           dist = Math.hypot(dx, dy);
-      if (dist !== 0) { this.pos.x += (dx/dist)*effectiveSpeed; this.pos.y += (dy/dist)*effectiveSpeed; }
+      if (dist !== 0) {
+        this.pos.x += (dx/dist) * effectiveSpeed;
+        this.pos.y += (dy/dist) * effectiveSpeed;
+      }
       if (dist < effectiveSpeed) this.targetIndex++;
     }
   }
   draw() {
     ctx.fillStyle = this.color;
     ctx.beginPath();
-    ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI*2);
+    ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
-    let barW = 20, barH = 4, ratio = this.health/this.maxHealth;
-    ctx.fillStyle = "black"; ctx.fillRect(this.pos.x - barW/2, this.pos.y - this.radius - 10, barW, barH);
-    ctx.fillStyle = "green"; ctx.fillRect(this.pos.x - barW/2, this.pos.y - this.radius - 10, barW*ratio, barH);
+    let barW = 20, barH = 4, ratio = this.health / this.maxHealth;
+    ctx.fillStyle = "black";
+    ctx.fillRect(this.pos.x - barW/2, this.pos.y - this.radius - 10, barW, barH);
+    ctx.fillStyle = "green";
+    ctx.fillRect(this.pos.x - barW/2, this.pos.y - this.radius - 10, barW * ratio, barH);
   }
 }
 
-// Tower types: basic, sniper, splash, slow, smart.
+// Tower: types: basic, sniper, splash, slow, smart.
 class Tower {
   constructor(pos, type) {
     this.pos = { ...pos };
-    this.type = type; this.level = 1; this.timer = 0;
-    this.maxUpgrades = 3; this.specialAbilityUnlocked = false; this.attackSlowTimer = 0;
+    this.type = type;
+    this.level = 1;
+    this.timer = 0;
+    this.maxUpgrades = 3;
+    this.specialAbilityUnlocked = false;
+    this.attackSlowTimer = 0;
     if (type === "basic") {
       this.range = 100; this.damage = 20; this.cooldown = 60; this.color = "blue";
     } else if (type === "sniper") {
       this.range = 150; this.damage = 40; this.cooldown = 120; this.color = "purple";
     } else if (type === "splash") {
-      this.range = 120; this.damage = 25; this.cooldown = 180; this.color = "green";
+      // New: cooldown is 0.3 sec (18 frames), and pulse parameters updated.
+      this.range = 120; this.damage = 25; this.cooldown = 18; this.color = "green";
     } else if (type === "slow") {
       this.range = 80; this.damage = 10; this.cooldown = 50; this.color = "cyan";
     } else if (type === "smart") {
@@ -131,7 +140,7 @@ class Tower {
     }
     if (target && this.timer <= 0) {
       if (this.type === "splash") {
-        pulses.push(new Pulse(this.pos, this.range, this.damage, 180));
+        pulses.push(new Pulse(this.pos, this.range, this.damage, 30));
       } else if (this.type === "smart") {
         const speed = 8,
               dx = target.pos.x - this.pos.x,
@@ -142,7 +151,10 @@ class Tower {
               dx_e = wp.x - target.pos.x,
               dy_e = wp.y - target.pos.y,
               dEnemy = Math.hypot(dx_e, dy_e) || 1,
-              predictedPos = { x: target.pos.x + (dx_e/dEnemy)*t, y: target.pos.y + (dy_e/dEnemy)*t };
+              predictedPos = {
+                x: target.pos.x + (dx_e / dEnemy) * t,
+                y: target.pos.y + (dy_e / dEnemy) * t
+              };
         projectiles.push(new Projectile(this.pos, target, this.damage, speed, "smart", predictedPos));
       } else if (this.type === "slow") {
         projectiles.push(new Projectile(this.pos, target, this.damage, 5, "slow"));
@@ -156,10 +168,18 @@ class Tower {
   draw(sel = false) {
     ctx.fillStyle = sel ? "grey" : this.color;
     ctx.beginPath();
-    ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI*2);
+    ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
-    if (sel) { ctx.strokeStyle = "grey"; ctx.beginPath(); ctx.arc(this.pos.x, this.pos.y, this.range, 0, Math.PI*2); ctx.stroke(); }
-    ctx.fillStyle = "white"; ctx.font = "16px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    if (sel) {
+      ctx.strokeStyle = "grey";
+      ctx.beginPath();
+      ctx.arc(this.pos.x, this.pos.y, this.range, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "white";
+    ctx.font = "16px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
     ctx.fillText(this.level, this.pos.x, this.pos.y);
   }
   upgrade(stat) {
@@ -177,51 +197,73 @@ class Tower {
   }
 }
 
-// Projectile class; smart projectiles may use predictedPos.
+// Projectile class; smart bullets can use an optional predictedPos.
 class Projectile {
-  constructor(startPos, target, damage, speed, projType="normal", predictedPos=null) {
-    this.pos = {...startPos}; this.target = target; this.damage = damage; this.speed = speed;
+  constructor(startPos, target, damage, speed, projType = "normal", predictedPos = null) {
+    this.pos = { ...startPos };
+    this.target = target;
+    this.damage = damage;
+    this.speed = speed;
     this.projType = projType;
-    const aimPos = (projType==="smart" && predictedPos) ? predictedPos : target.pos,
-          dx = aimPos.x - startPos.x, dy = aimPos.y - startPos.y,
-          dist = Math.hypot(dx,dy);
-    this.dx = dist ? dx/dist : 0; this.dy = dist ? dy/dist : 0;
-    this.radius = 5; this.active = true;
+    const aimPos = (projType === "smart" && predictedPos) ? predictedPos : target.pos;
+    const dx = aimPos.x - startPos.x, dy = aimPos.y - startPos.y,
+          dist = Math.hypot(dx, dy);
+    this.dx = dist ? dx / dist : 0;
+    this.dy = dist ? dy / dist : 0;
+    this.radius = 5;
+    this.active = true;
   }
   update() {
-    this.pos.x += this.dx * this.speed; 
+    this.pos.x += this.dx * this.speed;
     this.pos.y += this.dy * this.speed;
-    if (Math.hypot(this.target.pos.x - this.pos.x, this.target.pos.y - this.pos.y) < this.radius + this.target.radius) {
-      this.target.health -= this.damage; this.active = false;
+    if (Math.hypot(this.target.pos.x - this.pos.x, this.target.pos.y - this.pos.y) <
+        this.radius + this.target.radius) {
+      this.target.health -= this.damage;
+      this.active = false;
     }
   }
   draw() {
-    ctx.fillStyle = "black"; ctx.beginPath(); ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "black";
+    ctx.beginPath();
+    ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
 // Pulse class for the splash tower.
+// Uses an ease-out cubic function for expansion: f(t) = 1 - (1-t)^3.
 class Pulse {
-  constructor(center, maxRadius, damage, duration=180) {
-    this.center = {...center}; this.maxRadius = maxRadius; this.damage = damage;
-    this.duration = duration; this.frame = 0; this.hitEnemies = new Set();
+  constructor(center, maxRadius, damage, duration = 30) {
+    this.center = { ...center };
+    this.maxRadius = maxRadius;
+    this.damage = damage;
+    this.duration = duration;
+    this.frame = 0;
+    this.hitEnemies = new Set();
   }
   update() {
     this.frame++;
-    this.currentRadius = (this.frame/this.duration)*this.maxRadius;
+    let t = this.frame / this.duration;
+    // Ease-out cubic: fast initially, then slows down.
+    let easeOut = 1 - Math.pow(1 - t, 3);
+    this.currentRadius = easeOut * this.maxRadius;
     const tol = 5;
     for (let enemy of enemies) {
       let d = Math.hypot(enemy.pos.x - this.center.x, enemy.pos.y - this.center.y);
-      if (d >= this.currentRadius - tol && d <= this.currentRadius + tol && !this.hitEnemies.has(enemy)) {
-        enemy.health -= this.damage; this.hitEnemies.add(enemy);
+      if (d >= this.currentRadius - tol && d <= this.currentRadius + tol &&
+          !this.hitEnemies.has(enemy)) {
+        enemy.health -= this.damage;
+        this.hitEnemies.add(enemy);
       }
     }
   }
   draw() {
-    const alpha = 1 - (this.frame/this.duration);
-    ctx.strokeStyle = `rgba(0,128,0,${alpha})`; 
-    ctx.lineWidth = 3; ctx.beginPath();
-    ctx.arc(this.center.x, this.center.y, this.currentRadius, 0, Math.PI*2); ctx.stroke();
+    const alpha = 1 - (this.frame / this.duration);
+    ctx.strokeStyle = `rgba(0,128,0,${alpha})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(this.center.x, this.center.y, this.currentRadius, 0, Math.PI * 2);
+    ctx.stroke();
   }
   isDone() { return this.frame >= this.duration; }
 }
@@ -232,6 +274,7 @@ class Pulse {
 function startRound() {
   currentRound++;
   inRound = true;
+  // Fewer enemies per round
   enemiesToSpawn = 3 + currentRound;
   enemySpawnTimer = 0;
   updateToolbar();
@@ -279,7 +322,7 @@ function updateToolbar() {
               ? `<button id="finalUpgrade">Final Upgrade ($60)</button>`
               : `<div>Max Upgrades Achieved</div>`
             }
-            <button id="deleteButton">Delete</button>
+            <button id="deleteButton">Delete (Refund 75%)</button>
             <button id="cancelSelectionButton">Cancel</button>`;
     toolbarContent.innerHTML = html;
     if (selectedTower.level < selectedTower.maxUpgrades) {
@@ -289,7 +332,13 @@ function updateToolbar() {
     } else if (!selectedTower.specialAbilityUnlocked) {
       document.getElementById("finalUpgrade").addEventListener("click", () => { attemptUpgrade(selectedTower, "final"); });
     }
-    document.getElementById("deleteButton").addEventListener("click", () => { towers = towers.filter(t => t !== selectedTower); selectedTower = null; updateToolbar(); });
+    document.getElementById("deleteButton").addEventListener("click", () => {
+      // Refund 75% of the base cost.
+      currency += Math.floor(towerCosts[selectedTower.type] * 0.75);
+      towers = towers.filter(t => t !== selectedTower);
+      selectedTower = null;
+      updateToolbar();
+    });
     document.getElementById("cancelSelectionButton").addEventListener("click", () => { selectedTower = null; updateToolbar(); });
   } else {
     html += `
@@ -314,6 +363,68 @@ function attemptUpgrade(tower, stat) {
 }
 
 /*****************************
+      CHEAT PANEL FUNCTIONS
+*****************************/
+let cheatPanel;
+function createCheatPanel() {
+  cheatPanel = document.createElement("div");
+  cheatPanel.id = "cheatPanel";
+  cheatPanel.style.position = "absolute";
+  cheatPanel.style.top = "20px";
+  cheatPanel.style.left = "50%";
+  cheatPanel.style.transform = "translateX(-50%)";
+  cheatPanel.style.backgroundColor = "rgba(0,0,0,0.7)";
+  cheatPanel.style.color = "white";
+  cheatPanel.style.padding = "10px";
+  cheatPanel.style.borderRadius = "5px";
+  cheatPanel.style.zIndex = "1000";
+  let input = document.createElement("input");
+  input.type = "text";
+  input.style.width = "300px";
+  input.style.padding = "5px";
+  input.style.border = "none";
+  input.style.outline = "none";
+  input.style.backgroundColor = "#333";
+  input.style.color = "white";
+  cheatPanel.appendChild(input);
+  document.body.appendChild(cheatPanel);
+  input.focus();
+  input.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
+      let cmd = input.value.trim();
+      handleCheatCommand(cmd);
+      input.value = "";
+    }
+  });
+}
+function toggleCheatPanel() {
+  if (!cheatPanel) { createCheatPanel(); }
+  else { cheatPanel.style.display = cheatPanel.style.display === "none" ? "block" : "none"; }
+}
+document.addEventListener("keydown", function(e) {
+  if (e.key === "`") { toggleCheatPanel(); }
+});
+function handleCheatCommand(cmd) {
+  let parts = cmd.split(" ");
+  if (parts[0] === "set") {
+    if (parts[1] === "money") {
+      let amount = parseInt(parts[2]);
+      if (!isNaN(amount)) { currency = amount; updateToolbar(); console.log("Set money to", amount); }
+    } else if (parts[1] === "gamespeed") {
+      let speed = parseInt(parts[2]);
+      if (!isNaN(speed) && speed > 0) { gameSpeed = speed; console.log("Set game speed to", speed); }
+    }
+  } else if(parts[0] === "start" && parts[1] === "wave") {
+    let waveNum = parseInt(parts[2]);
+    if (!isNaN(waveNum)) {
+      currentRound = waveNum - 1;
+      startRound();
+      console.log("Starting wave", waveNum);
+    }
+  } else { console.log("Unknown command:", cmd); }
+}
+
+/*****************************
        EVENT HANDLERS
 *****************************/
 startRoundButton.addEventListener("click", () => { if (!inRound) startRound(); });
@@ -327,7 +438,9 @@ canvas.addEventListener("click", e => {
       clickPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
   let clickedOnTower = false;
   for (let tower of towers)
-    if (Math.hypot(clickPos.x - tower.pos.x, clickPos.y - tower.pos.y) <= tower.radius) { selectedTower = tower; clickedOnTower = true; placingTowerType = null; updateToolbar(); break; }
+    if (Math.hypot(clickPos.x - tower.pos.x, clickPos.y - tower.pos.y) <= tower.radius) {
+      selectedTower = tower; clickedOnTower = true; placingTowerType = null; updateToolbar(); break;
+    }
   if (!clickedOnTower) {
     if (placingTowerType) {
       let cost = towerCosts[placingTowerType];
@@ -339,22 +452,17 @@ canvas.addEventListener("click", e => {
 });
 
 /*****************************
-       RENDERING & GAME LOOP
+      UPDATE & DRAW FUNCTIONS
 *****************************/
-function drawPath() {
-  ctx.strokeStyle = "grey"; ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.moveTo(PATH[0].x, PATH[0].y);
-  for (let i = 1; i < PATH.length; i++) { ctx.lineTo(PATH[i].x, PATH[i].y); }
-  ctx.stroke();
-}
-function gameLoop() {
+function updateGameState() {
   frameCount++;
-  ctx.clearRect(0,0,WIDTH,HEIGHT);
-  ctx.fillStyle = "white"; ctx.fillRect(0,0,WIDTH,HEIGHT);
-  drawPath();
   if (inRound && enemiesToSpawn > 0) {
     enemySpawnTimer++;
-    if (enemySpawnTimer >= 60) { enemies.push(new Enemy(randomEnemyType())); enemySpawnTimer = 0; enemiesToSpawn--; }
+    if (enemySpawnTimer >= 60) {
+      enemies.push(new Enemy(randomEnemyType()));
+      enemySpawnTimer = 0;
+      enemiesToSpawn--;
+    }
   }
   towers.forEach(t => t.update());
   enemies.forEach(e => e.update());
@@ -362,15 +470,22 @@ function gameLoop() {
   projectiles = projectiles.filter(p => p.active);
   pulses.forEach(pulse => pulse.update());
   pulses = pulses.filter(pulse => !pulse.isDone());
-  pulses.forEach(pulse => pulse.draw());
+  // Process enemy deaths and escapes.
   for (let i = enemies.length - 1; i >= 0; i--) {
     let enemy = enemies[i];
     if (enemy.health <= 0) { currency += enemy.coinReward; enemies.splice(i, 1); }
     else if (enemy.targetIndex >= enemy.path.length) { playerHealth--; enemies.splice(i, 1); }
   }
+}
+function drawGame() {
+  ctx.clearRect(0, 0, WIDTH, HEIGHT);
+  ctx.fillStyle = "white";
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  drawPath();
   towers.forEach(t => t.draw(t === selectedTower));
   enemies.forEach(e => e.draw());
   projectiles.forEach(p => p.draw());
+  pulses.forEach(pulse => pulse.draw());
   if (placingTowerType && previewPos) {
     let tempRange, tempColor;
     if (placingTowerType === "basic") { tempRange = 100; tempColor = "rgba(0,0,255,0.3)"; }
@@ -378,14 +493,49 @@ function gameLoop() {
     else if (placingTowerType === "splash") { tempRange = 120; tempColor = "rgba(0,128,0,0.3)"; }
     else if (placingTowerType === "slow") { tempRange = 80; tempColor = "rgba(0,255,255,0.3)"; }
     else if (placingTowerType === "smart") { tempRange = 180; tempColor = "rgba(255,215,0,0.3)"; }
-    ctx.fillStyle = tempColor; ctx.beginPath(); ctx.arc(previewPos.x, previewPos.y, 15, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = tempColor; ctx.beginPath(); ctx.arc(previewPos.x, previewPos.y, tempRange, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = tempColor;
+    ctx.beginPath();
+    ctx.arc(previewPos.x, previewPos.y, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = tempColor;
+    ctx.beginPath();
+    ctx.arc(previewPos.x, previewPos.y, tempRange, 0, Math.PI * 2);
+    ctx.stroke();
   }
-  ctx.fillStyle = "black"; ctx.font = "20px Arial"; ctx.textAlign = "left";
+  ctx.fillStyle = "black";
+  ctx.font = "20px Arial";
+  ctx.textAlign = "left";
   ctx.fillText("Health: " + playerHealth, 10, 30);
   ctx.fillText("Round: " + currentRound, 10, 60);
   ctx.fillText("Currency: $" + currency, 10, 90);
+}
+function drawPath() {
+  ctx.strokeStyle = "grey";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(PATH[0].x, PATH[0].y);
+  for (let i = 1; i < PATH.length; i++) { ctx.lineTo(PATH[i].x, PATH[i].y); }
+  ctx.stroke();
+}
+function gameLoop() {
+  // Run update steps according to gameSpeed multiplier.
+  for (let i = 0; i < gameSpeed; i++) { updateGameState(); }
+  drawGame();
   requestAnimationFrame(gameLoop);
+}
+function randomEnemyType() {
+  let roll = Math.random();
+  if (currentRound < 3) { return (roll < 0.8) ? "basic" : "fast"; }
+  else if (currentRound < 5) {
+    if (roll < 0.6) return "basic";
+    else if (roll < 0.9) return "fast";
+    else return "tank";
+  } else {
+    if (roll < 0.5) return "basic";
+    else if (roll < 0.7) return "fast";
+    else if (roll < 0.9) return "tank";
+    else return "regenerator";
+  }
 }
 updateToolbar();
 gameLoop();
