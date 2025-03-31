@@ -1,12 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Tower Defense Game</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <canvas id="gameCanvas" width="800" height="600"></canvas>
-  <script src="game.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Tower Defense Game</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="gameContainer">
+      <canvas id="gameCanvas" width="800" height="600"></canvas>
+      <div id="toolbar">
+        <div id="toolbar-content">
+          <!-- The default shop view will appear here -->
+        </div>
+        <button id="startRoundButton">Start Round</button>
+      </div>
+    </div>
+    <script src="game.js"></script>
+  </body>
 </html>
