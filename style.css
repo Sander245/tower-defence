@@ -1,13 +1,63 @@
-body {
+/* Reset and basic styling */
+* {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
-  background-color: #eee;
-  overflow: hidden;
 }
 
-canvas {
-  display: block;
-  margin: 0 auto;
+body {
+  background-color: #eee;
+  font-family: Arial, sans-serif;
+}
+
+/* Container that holds both canvas and toolbar */
+#gameContainer {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 20px;
+}
+
+/* Game canvas styling */
+#gameCanvas {
   background-color: #fff;
   border: 2px solid #000;
+}
+
+/* Toolbar styling */
+#toolbar {
+  margin-left: 20px;
+  width: 200px;
+  background-color: #ddd;
+  padding: 10px;
+  border: 1px solid #aaa;
+  border-radius: 4px;
+}
+
+#toolbar h3 {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+#toolbar button {
+  display: block;
+  margin: 5px auto;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.shop-item {
+  width: 90%;
+  margin: 5px auto;
+  padding: 8px;
+  background-color: #fff;
+  border: 1px solid #888;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.shop-item:hover {
+  background-color: #f0f0f0;
 }
