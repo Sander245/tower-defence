@@ -44,7 +44,7 @@ const PATH = [
 /*****************************
          CLASSES
 *****************************/
-// Enemy: basic (red), fast (orange), tank (brown), regenerator (teal)
+// Enemy types: basic, fast, tank, regenerator
 class Enemy {
   constructor(type) {
     this.path = [...PATH];
@@ -52,16 +52,16 @@ class Enemy {
     this.targetIndex = 1;
     this.type = type;
     if (type === "basic") {
-      this.speed = 1.0; this.maxHealth = 90; this.radius = 10;
+      this.speed = 0.8; this.maxHealth = 90; this.radius = 10;
       this.color = "red"; this.coinReward = 10;
     } else if (type === "fast") {
-      this.speed = 2.0; this.maxHealth = 70; this.radius = 8;
+      this.speed = 1.4; this.maxHealth = 70; this.radius = 8;
       this.color = "orange"; this.coinReward = 15;
     } else if (type === "tank") {
       this.speed = 0.5; this.maxHealth = 200; this.radius = 12;
       this.color = "brown"; this.coinReward = 20;
     } else if (type === "regenerator") {
-      this.speed = 0.8; this.maxHealth = 150; this.radius = 10;
+      this.speed = 0.6; this.maxHealth = 150; this.radius = 10;
       this.color = "teal"; this.coinReward = 25;
       this.attackCooldown = 180; this.lastAttack = -180;
     }
@@ -102,7 +102,7 @@ class Enemy {
   }
 }
 
-// Tower: types: basic, sniper, splash, slow, smart.
+// Tower types: basic, sniper, splash, slow, smart.
 class Tower {
   constructor(pos, type) {
     this.pos = { ...pos };
@@ -113,7 +113,7 @@ class Tower {
     } else if (type === "sniper") {
       this.range = 150; this.damage = 40; this.cooldown = 120; this.color = "purple";
     } else if (type === "splash") {
-      this.range = 120; this.damage = 25; this.cooldown = 240; this.color = "green";
+      this.range = 120; this.damage = 25; this.cooldown = 180; this.color = "green";
     } else if (type === "slow") {
       this.range = 80; this.damage = 10; this.cooldown = 50; this.color = "cyan";
     } else if (type === "smart") {
@@ -131,7 +131,7 @@ class Tower {
     }
     if (target && this.timer <= 0) {
       if (this.type === "splash") {
-        pulses.push(new Pulse(this.pos, this.range, this.damage, 240));
+        pulses.push(new Pulse(this.pos, this.range, this.damage, 180));
       } else if (this.type === "smart") {
         const speed = 8,
               dx = target.pos.x - this.pos.x,
@@ -177,7 +177,7 @@ class Tower {
   }
 }
 
-// Projectile class; smart projectiles may use an optional predictedPos.
+// Projectile class; smart projectiles may use predictedPos.
 class Projectile {
   constructor(startPos, target, damage, speed, projType="normal", predictedPos=null) {
     this.pos = {...startPos}; this.target = target; this.damage = damage; this.speed = speed;
@@ -189,19 +189,20 @@ class Projectile {
     this.radius = 5; this.active = true;
   }
   update() {
-    this.pos.x += this.dx * this.speed; this.pos.y += this.dy * this.speed;
+    this.pos.x += this.dx * this.speed; 
+    this.pos.y += this.dy * this.speed;
     if (Math.hypot(this.target.pos.x - this.pos.x, this.target.pos.y - this.pos.y) < this.radius + this.target.radius) {
       this.target.health -= this.damage; this.active = false;
     }
   }
   draw() {
-    ctx.fillStyle = "black"; ctx.beginPath(); ctx.arc(this.pos.x, this.pos.y, this.radius,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = "black"; ctx.beginPath(); ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI*2); ctx.fill();
   }
 }
 
 // Pulse class for the splash tower.
 class Pulse {
-  constructor(center, maxRadius, damage, duration=240) {
+  constructor(center, maxRadius, damage, duration=180) {
     this.center = {...center}; this.maxRadius = maxRadius; this.damage = damage;
     this.duration = duration; this.frame = 0; this.hitEnemies = new Set();
   }
@@ -218,7 +219,8 @@ class Pulse {
   }
   draw() {
     const alpha = 1 - (this.frame/this.duration);
-    ctx.strokeStyle = `rgba(0,128,0,${alpha})`; ctx.lineWidth = 3; ctx.beginPath();
+    ctx.strokeStyle = `rgba(0,128,0,${alpha})`; 
+    ctx.lineWidth = 3; ctx.beginPath();
     ctx.arc(this.center.x, this.center.y, this.currentRadius, 0, Math.PI*2); ctx.stroke();
   }
   isDone() { return this.frame >= this.duration; }
