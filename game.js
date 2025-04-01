@@ -871,8 +871,7 @@ function createTitleScreen() {
   document.getElementById("creditsButton").addEventListener("click", function() {
     showCreditsScreen();
   });
-  // FIX: Upgrades button – instead of calling hideTitleScreen() (which shows the gameContainer),
-  // simply hide the title screen so the upgrade shop (like credits) can be shown.
+  // Upgrades button now hides the title screen and shows the upgrade shop screen.
   document.getElementById("upgradesButton").addEventListener("click", function() {
     titleScreen.style.display = "none";
     if (!upgradeShopScreen) createUpgradeShopScreen();
@@ -1016,25 +1015,31 @@ function createUpgradeShopScreen() {
 }
 
 function updateUpgradeShopUI() {
+  // Build upgrade shop UI similar to the credits screen, but with upgrade cards.
   let html = `<h1 style="font-size: 40px; margin-bottom: 20px;">Upgrade Shop</h1>`;
-  html += `<div style="margin-bottom: 20px; font-size: 20px;">Coins: ${coins}</div>`;
+  html += `<div style="font-size: 20px; margin-bottom: 20px;">Coins: ${coins}</div>`;
   html += `<div style="width: 80%; max-width: 600px;">`;
   for (let key in upgradeItems) {
     let item = upgradeItems[key];
-    html += `<div style="border: 1px solid #555; padding: 10px; margin-bottom: 10px;">
-              <h2 style="margin: 5px 0;">${item.displayName}</h2>
-              <p style="margin: 5px 0;">${item.description}</p>
-              <p style="margin: 5px 0;">Level: ${item.level} / ${item.maxLevel}</p>
-              <p style="margin: 5px 0;">Price: ${item.level < item.maxLevel ? item.currentPrice : 'Maxed'}</p>`;
+    let progressPercent = (item.level / item.maxLevel) * 100;
+    html += `
+      <div style="border: 1px solid #555; padding: 10px; margin-bottom: 10px; border-radius: 5px;">
+        <h2 style="margin: 5px 0;">${item.displayName}</h2>
+        <p style="margin: 5px 0;">${item.description}</p>
+        <p style="margin: 5px 0;">Level: ${item.level} / ${item.maxLevel}</p>
+        <div style="width: 100%; height: 10px; background-color: #555; border-radius: 4px; margin-bottom: 5px;">
+           <div style="width: ${progressPercent}%; height: 100%; background-color: #0f0; border-radius: 4px;"></div>
+        </div>
+        <p style="margin: 5px 0;">Price: ${item.level < item.maxLevel ? item.currentPrice : 'Maxed'}</p>`;
     if (item.level < item.maxLevel) {
-      html += `<button onclick="buyUpgrade('${key}')">Buy Upgrade</button>`;
+      html += `<button onclick="buyUpgrade('${key}')" style="padding: 5px 10px; font-size: 16px; cursor: pointer;">Buy Upgrade</button>`;
     } else {
-      html += `<button disabled>Maxed Out</button>`;
+      html += `<button disabled style="padding: 5px 10px; font-size: 16px; cursor: default;">Maxed Out</button>`;
     }
     html += `</div>`;
   }
   html += `</div>`;
-  html += `<button style="padding: 10px 20px; font-size: 20px; margin-top: 20px;" onclick="hideUpgradeShopScreen()">Back</button>`;
+  html += `<button onclick="hideUpgradeShopScreen()" style="margin-top: 20px; padding: 10px 20px; font-size: 20px;">Back</button>`;
   upgradeShopScreen.innerHTML = html;
 }
 
