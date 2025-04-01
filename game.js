@@ -17,9 +17,8 @@ let currentRound = 0,
     placingTowerType = null,
     previewPos = null,
     selectedTower = null,
-    frameCount = 0;
-
-let gameSpeed = 1; // Global multiplier; cheat "set gamespeed" can change this.
+    frameCount = 0,
+    gameSpeed = 1; // game update multiplier
 
 const towerCosts = {
   "basic": 50,
@@ -43,7 +42,7 @@ const PATH = [
 /*****************************
          CLASSES
 *****************************/
-// Enemy: types: basic (red), fast, tank, regenerator.
+// Enemy: basic (red), fast, tank, regenerator.
 class Enemy {
   constructor(type) {
     this.path = [...PATH];
@@ -87,8 +86,8 @@ class Enemy {
           dx = target.x - this.pos.x, dy = target.y - this.pos.y,
           dist = Math.hypot(dx, dy);
       if (dist !== 0) {
-        this.pos.x += (dx/dist) * effectiveSpeed;
-        this.pos.y += (dy/dist) * effectiveSpeed;
+        this.pos.x += (dx / dist) * effectiveSpeed;
+        this.pos.y += (dy / dist) * effectiveSpeed;
       }
       if (dist < effectiveSpeed) this.targetIndex++;
     }
@@ -121,7 +120,7 @@ class Tower {
     } else if (type === "sniper") {
       this.range = 150; this.damage = 40; this.cooldown = 120; this.color = "purple";
     } else if (type === "splash") {
-      // New: cooldown is 0.3 sec (18 frames), and pulse parameters updated.
+      // Pulse expands using easing over 30 frames and cooldown is 18 frames.
       this.range = 120; this.damage = 25; this.cooldown = 18; this.color = "green";
     } else if (type === "slow") {
       this.range = 80; this.damage = 10; this.cooldown = 50; this.color = "cyan";
@@ -197,7 +196,7 @@ class Tower {
   }
 }
 
-// Projectile class; smart bullets can use an optional predictedPos.
+// Projectile class; smart projectiles may use predictedPos.
 class Projectile {
   constructor(startPos, target, damage, speed, projType = "normal", predictedPos = null) {
     this.pos = { ...startPos };
@@ -205,8 +204,9 @@ class Projectile {
     this.damage = damage;
     this.speed = speed;
     this.projType = projType;
-    const aimPos = (projType === "smart" && predictedPos) ? predictedPos : target.pos;
-    const dx = aimPos.x - startPos.x, dy = aimPos.y - startPos.y,
+    const aimPos = (projType === "smart" && predictedPos) ? predictedPos : target.pos,
+          dx = aimPos.x - startPos.x,
+          dy = aimPos.y - startPos.y,
           dist = Math.hypot(dx, dy);
     this.dx = dist ? dx / dist : 0;
     this.dy = dist ? dy / dist : 0;
@@ -231,7 +231,7 @@ class Projectile {
 }
 
 // Pulse class for the splash tower.
-// Uses an ease-out cubic function for expansion: f(t) = 1 - (1-t)^3.
+// Uses an ease‑out cubic function for fast initial expansion that decelerates at the end.
 class Pulse {
   constructor(center, maxRadius, damage, duration = 30) {
     this.center = { ...center };
@@ -244,7 +244,6 @@ class Pulse {
   update() {
     this.frame++;
     let t = this.frame / this.duration;
-    // Ease-out cubic: fast initially, then slows down.
     let easeOut = 1 - Math.pow(1 - t, 3);
     this.currentRadius = easeOut * this.maxRadius;
     const tol = 5;
@@ -274,16 +273,14 @@ class Pulse {
 function startRound() {
   currentRound++;
   inRound = true;
-  // Fewer enemies per round
   enemiesToSpawn = 3 + currentRound;
   enemySpawnTimer = 0;
   updateToolbar();
 }
 function randomEnemyType() {
   let roll = Math.random();
-  if (currentRound < 3) {
-    return (roll < 0.8) ? "basic" : "fast";
-  } else if (currentRound < 5) {
+  if (currentRound < 3) { return (roll < 0.8) ? "basic" : "fast"; }
+  else if (currentRound < 5) {
     if (roll < 0.6) return "basic";
     else if (roll < 0.9) return "fast";
     else return "tank";
@@ -333,7 +330,6 @@ function updateToolbar() {
       document.getElementById("finalUpgrade").addEventListener("click", () => { attemptUpgrade(selectedTower, "final"); });
     }
     document.getElementById("deleteButton").addEventListener("click", () => {
-      // Refund 75% of the base cost.
       currency += Math.floor(towerCosts[selectedTower.type] * 0.75);
       towers = towers.filter(t => t !== selectedTower);
       selectedTower = null;
@@ -353,7 +349,9 @@ function updateToolbar() {
       item.addEventListener("click", () => { placingTowerType = item.getAttribute("data-type"); });
     });
   }
-  startRoundButton.style.display = inRound ? "none" : "block";
+  // Show the "Start Round" button if not in round.
+  if (!inRound) startRoundButton.style.display = "block";
+  else startRoundButton.style.display = "none";
 }
 function attemptUpgrade(tower, stat) {
   let cost = (tower.level < tower.maxUpgrades) ? 40 : 60;
@@ -378,6 +376,7 @@ function createCheatPanel() {
   cheatPanel.style.padding = "10px";
   cheatPanel.style.borderRadius = "5px";
   cheatPanel.style.zIndex = "1000";
+  
   let input = document.createElement("input");
   input.type = "text";
   input.style.width = "300px";
@@ -387,6 +386,39 @@ function createCheatPanel() {
   input.style.backgroundColor = "#333";
   input.style.color = "white";
   cheatPanel.appendChild(input);
+  
+  // Create a toggle dropdown for command list
+  let toggleButton = document.createElement("div");
+  toggleButton.innerHTML = "▼ Commands";
+  toggleButton.style.cursor = "pointer";
+  toggleButton.style.textAlign = "center";
+  toggleButton.style.fontSize = "16px";
+  toggleButton.style.marginTop = "5px";
+  cheatPanel.appendChild(toggleButton);
+  
+  let commandList = document.createElement("div");
+  commandList.id = "commandList";
+  commandList.style.display = "none";
+  commandList.style.marginTop = "5px";
+  commandList.innerHTML = `
+    <ul style="list-style-type: none; padding-left: 0; margin: 0;">
+      <li>set money [amount]</li>
+      <li>set gamespeed [value]</li>
+      <li>start wave [number]</li>
+    </ul>
+  `;
+  cheatPanel.appendChild(commandList);
+  
+  toggleButton.addEventListener("click", () => {
+    if (commandList.style.display === "none") {
+      commandList.style.display = "block";
+      toggleButton.innerHTML = "▲ Commands";
+    } else {
+      commandList.style.display = "none";
+      toggleButton.innerHTML = "▼ Commands";
+    }
+  });
+  
   document.body.appendChild(cheatPanel);
   input.focus();
   input.addEventListener("keydown", function(e) {
@@ -398,7 +430,7 @@ function createCheatPanel() {
   });
 }
 function toggleCheatPanel() {
-  if (!cheatPanel) { createCheatPanel(); }
+  if (!cheatPanel) createCheatPanel();
   else { cheatPanel.style.display = cheatPanel.style.display === "none" ? "block" : "none"; }
 }
 document.addEventListener("keydown", function(e) {
@@ -452,17 +484,13 @@ canvas.addEventListener("click", e => {
 });
 
 /*****************************
-      UPDATE & DRAW FUNCTIONS
+       UPDATE & DRAW FUNCTIONS
 *****************************/
 function updateGameState() {
   frameCount++;
   if (inRound && enemiesToSpawn > 0) {
     enemySpawnTimer++;
-    if (enemySpawnTimer >= 60) {
-      enemies.push(new Enemy(randomEnemyType()));
-      enemySpawnTimer = 0;
-      enemiesToSpawn--;
-    }
+    if (enemySpawnTimer >= 60) { enemies.push(new Enemy(randomEnemyType())); enemySpawnTimer = 0; enemiesToSpawn--; }
   }
   towers.forEach(t => t.update());
   enemies.forEach(e => e.update());
@@ -475,6 +503,11 @@ function updateGameState() {
     let enemy = enemies[i];
     if (enemy.health <= 0) { currency += enemy.coinReward; enemies.splice(i, 1); }
     else if (enemy.targetIndex >= enemy.path.length) { playerHealth--; enemies.splice(i, 1); }
+  }
+  // When round is over, show the Start Round button.
+  if (inRound && enemiesToSpawn === 0 && enemies.length === 0) {
+    inRound = false;
+    updateToolbar();
   }
 }
 function drawGame() {
@@ -518,11 +551,13 @@ function drawPath() {
   ctx.stroke();
 }
 function gameLoop() {
-  // Run update steps according to gameSpeed multiplier.
   for (let i = 0; i < gameSpeed; i++) { updateGameState(); }
   drawGame();
   requestAnimationFrame(gameLoop);
 }
+updateToolbar();
+gameLoop();
+
 function randomEnemyType() {
   let roll = Math.random();
   if (currentRound < 3) { return (roll < 0.8) ? "basic" : "fast"; }
@@ -537,5 +572,3 @@ function randomEnemyType() {
     else return "regenerator";
   }
 }
-updateToolbar();
-gameLoop();
