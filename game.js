@@ -30,7 +30,7 @@ let currentRound = 0,
     previewPos = null,
     selectedTower = null,
     frameCount = 0,
-    gameSpeed = 1, // 1x or 2x
+    gameSpeed = 1, // default starting speed
     autoStart = false,
     gameOver = false;
 
@@ -55,6 +55,73 @@ const PATH = [
   { x: 50, y: 300 }
 ];
 
+/****************** NEW: Persistent Upgrades & Coins ******************/
+let coins = 0; // persistent upgrade currency
+let startingCashBonus = 0;   // additional starting cash bonus
+let enemyHealthMultiplier = 1; // multiplier to lower enemy health (< 1 means enemies get weaker)
+let gameSpeedMax = 2; // default max game speed is 2x; upgrade can unlock 3x
+let waveCoinsBonus = 2; // coins earned per completed wave
+const BASE_CURRENCY = 150; // base cash for purchasing towers
+
+// Upgrade shop items configuration
+let upgradeItems = {
+  moreStartingCash: {
+    id: "moreStartingCash",
+    displayName: "More Starting Cash",
+    description: "Increase starting cash for new games by +50 per level.",
+    level: 0,
+    maxLevel: 3,
+    basePrice: 100,
+    currentPrice: 100,
+    multiple: true,
+    effect: function () {
+      startingCashBonus += 50;
+    }
+  },
+  lowerEnemyHealth: {
+    id: "lowerEnemyHealth",
+    displayName: "Lower Enemy Health",
+    description: "Lower enemy health by 10% per level.",
+    level: 0,
+    maxLevel: 3,
+    basePrice: 150,
+    currentPrice: 150,
+    multiple: true,
+    effect: function () {
+      enemyHealthMultiplier *= 0.9;
+    }
+  },
+  fastGameSpeed: {
+    id: "fastGameSpeed",
+    displayName: "3x Gamespeed",
+    description: "Unlocks a 3x gamespeed option.",
+    level: 0,
+    maxLevel: 1,
+    basePrice: 200,
+    currentPrice: 200,
+    multiple: false,
+    effect: function () {
+      gameSpeedMax = 3;
+    }
+  },
+  extraCoinsPerWave: {
+    id: "extraCoinsPerWave",
+    displayName: "Extra Coins Per Wave",
+    description: "Increase coins earned per wave by +1 per level.",
+    level: 0,
+    maxLevel: 3,
+    basePrice: 120,
+    currentPrice: 120,
+    multiple: true,
+    effect: function () {
+      waveCoinsBonus += 1;
+    }
+  }
+};
+
+// Load saved progress
+loadGameProgress();
+
 /*****************************
          CLASSES
 *****************************/
@@ -71,7 +138,7 @@ class Enemy {
       this.maxHealth = 90;
       this.radius = 10;
       this.color = "red";
-      this.coinReward = Math.floor(10 * 0.5); // half reward
+      this.coinReward = Math.floor(10 * 0.5);
     } else if (type === "fast") {
       this.speed = 1.4;
       this.maxHealth = 70;
@@ -93,7 +160,6 @@ class Enemy {
       this.attackCooldown = 180;
       this.lastAttack = -180;
     } else if (type === "boss") {
-      // Boss enemy: big, slow, and very durable.
       this.speed = 0.3;
       this.maxHealth = 1000;
       this.radius = 30;
@@ -101,10 +167,10 @@ class Enemy {
       this.coinReward = Math.floor(100 * 0.5);
     }
     
-    // Scale enemy health based on round (5% increase per round past the first)
+    // Scale enemy health based on round and upgrade multiplier (5% per round)
     let scale = 1 + (currentRound - 1) * 0.05;
     if (scale < 1) scale = 1;
-    this.maxHealth = Math.floor(this.maxHealth * scale);
+    this.maxHealth = Math.floor(this.maxHealth * scale * enemyHealthMultiplier);
     this.health = this.maxHealth;
     
     this.baseSpeed = this.speed;
@@ -112,7 +178,6 @@ class Enemy {
   }
   
   update() {
-    // Regenerator enemy heals over time and may slow towers.
     if (this.type === "regenerator") {
       this.health = Math.min(this.health + 0.2, this.maxHealth);
       if (frameCount - this.lastAttack >= this.attackCooldown) {
@@ -170,7 +235,6 @@ class Tower {
     } else if (type === "sniper") {
       this.range = 150; this.damage = 40; this.cooldown = 120; this.color = "purple";
     } else if (type === "splash") {
-      // Pulse tower – cooldown increased to ~1.3 seconds (78 frames at 60 FPS)
       this.range = 120; this.damage = 25; this.cooldown = 78; this.color = "green";
     } else if (type === "slow") {
       this.range = 80; this.damage = 10; this.cooldown = 50; this.color = "cyan";
@@ -288,7 +352,6 @@ class Projectile {
 }
 
 // Pulse class for the splash tower.
-// Uses an ease‑out cubic function.
 class Pulse {
   constructor(center, maxRadius, damage, duration = 30) {
     this.center = { ...center };
@@ -327,7 +390,7 @@ class Pulse {
   isDone() { return this.frame >= this.duration; }
 }
 
-/*********************** NEW: Castle Explosion CLASS ***********************/
+// Castle Explosion Class for when the castle is destroyed.
 class CastleExplosion {
   constructor(cx, cy, maxRadius, duration) {
     this.cx = cx;
@@ -341,20 +404,17 @@ class CastleExplosion {
     this.frame++;
     let t = this.frame / this.duration;
     this.currentRadius = t * this.maxRadius;
-    // Kill any enemy whose center is within the explosion.
+    // Kill enemies within the explosion radius.
     enemies.forEach(enemy => {
       let d = Math.hypot(enemy.pos.x - this.cx, enemy.pos.y - this.cy);
       if (d < this.currentRadius) {
-        enemy.health = 0; // Instant kill (and no coins awarded)
+        enemy.health = 0;
       }
     });
-    // Remove towers that are caught in the explosion.
+    // Remove towers caught in explosion.
     towers = towers.filter(tower => {
       let d = Math.hypot(tower.pos.x - this.cx, tower.pos.y - this.cy);
-      if (d < this.currentRadius) {
-        return false; // Remove tower (mini shockwave effect could be added here)
-      }
-      return true;
+      return d >= this.currentRadius;
     });
   }
   draw() {
@@ -429,7 +489,6 @@ function updateToolbar() {
              <button id="cancelSelectionButton">Cancel</button>`;
   } else {
     html += `<button class="shop-item" data-type="basic">Basic Defender ($50)</button>`;
-    // Unlock conditions shifted one round early:
     if (currentRound >= 3) {
       html += `<button class="shop-item" data-type="sniper">Sniper Defender ($75)</button>`;
     }
@@ -448,7 +507,7 @@ function updateToolbar() {
   html += `<div class="global-controls" style="margin-top: 10px; text-align: center;">
              <label><input type="checkbox" id="autoStartCheckbox" ${autoStart ? "checked" : ""}> Auto-Start Rounds</label>
              <br>
-             <button id="speedToggleButton" style="margin-top: 5px;">${gameSpeed === 1 ? "2x Speed" : "1x Speed"}</button>
+             <button id="speedToggleButton" style="margin-top: 5px;">${gameSpeed + "x Speed"}</button>
            </div>`;
   
   toolbarContent.innerHTML = html;
@@ -462,10 +521,12 @@ function updateToolbar() {
       document.getElementById("finalUpgrade").addEventListener("click", () => { attemptUpgrade(selectedTower, "final"); });
     }
     document.getElementById("deleteButton").addEventListener("click", () => {
-      currency += Math.floor(towerCosts[selectedTower.type] * 0.75);
-      towers = towers.filter(t => t !== selectedTower);
-      selectedTower = null;
-      updateToolbar();
+      if(confirm("Are you sure you want to delete this tower?")){
+        currency += Math.floor(towerCosts[selectedTower.type] * 0.75);
+        towers = towers.filter(t => t !== selectedTower);
+        selectedTower = null;
+        updateToolbar();
+      }
     });
     document.getElementById("cancelSelectionButton").addEventListener("click", () => { selectedTower = null; updateToolbar(); });
   } else {
@@ -484,7 +545,12 @@ function updateToolbar() {
   let speedBtn = document.getElementById("speedToggleButton");
   if (speedBtn) {
     speedBtn.addEventListener("click", function() {
-      gameSpeed = gameSpeed === 1 ? 2 : 1;
+      // Cycle gameSpeed from 1 up to gameSpeedMax.
+      if (gameSpeed >= gameSpeedMax) {
+        gameSpeed = 1;
+      } else {
+        gameSpeed++;
+      }
       updateToolbar();
     });
   }
@@ -545,6 +611,7 @@ function createCheatPanel() {
       <li>set gamespeed [value]</li>
       <li>set health [amount]</li>
       <li>start wave [number]</li>
+      <li>spawn enemies [count]</li>
     </ul>
   `;
   cheatPanel.appendChild(commandList);
@@ -599,6 +666,14 @@ function handleCheatCommand(cmd) {
       startRound();
       console.log("Starting wave", waveNum);
     }
+  } else if (parts[0] === "spawn" && parts[1] === "enemies") {
+    let count = parseInt(parts[2]);
+    if (!isNaN(count)) {
+      for (let i = 0; i < count; i++) {
+        enemies.push(new Enemy(randomEnemyType()));
+      }
+      console.log(`Spawned ${count} enemies.`);
+    }
   } else { console.log("Unknown command:", cmd); }
 }
 
@@ -633,19 +708,15 @@ canvas.addEventListener("click", e => {
        UPDATE & DRAW FUNCTIONS
 *****************************/
 function updateGameState() {
-  // If the castle (player) is dead, trigger and update castle explosion.
   if (playerHealth <= 0) {
     if (!castleExplosion) {
-      // On death, disable auto-start and reset speed.
       autoStart = false;
       gameSpeed = 1;
       updateToolbar();
-      // Create explosion from the castle's center.
       castleExplosion = new CastleExplosion(castle.x + castle.width/2, castle.y + castle.height/2, 1000, 60);
     } else {
       castleExplosion.update();
       if (castleExplosion.isDone()) {
-         // Clear remaining enemies and show Game Over.
          enemies = [];
          showGameOverScreen();
       }
@@ -676,13 +747,11 @@ function updateGameState() {
     let enemy = enemies[i];
     if (enemy.health <= 0) {
       if (enemy.type === "tank") {
-        // Transform a dying tank into a basic enemy.
         let newEnemy = new Enemy("basic");
         newEnemy.pos = { ...enemy.pos };
         newEnemy.targetIndex = enemy.targetIndex;
         enemies.push(newEnemy);
       } else if (enemy.type === "boss") {
-        // When boss dies, spawn 3 tanks spaced apart.
         for (let j = 0; j < 3; j++) {
           let tank = new Enemy("tank");
           tank.pos = { x: enemy.pos.x + (j - 1) * 20, y: enemy.pos.y };
@@ -698,11 +767,13 @@ function updateGameState() {
     }
   }
   
-  // Wave completion bonus: 5 coins.
+  // Wave completion: award 5 currency and coins bonus.
   if (inRound && enemiesToSpawn === 0 && enemies.length === 0) {
     currency += 5;
+    coins += waveCoinsBonus;
     inRound = false;
     updateToolbar();
+    saveGameProgress();
     if (autoStart) {
       setTimeout(startRound, 1000);
     }
@@ -744,7 +815,6 @@ function drawGame() {
   ctx.fillText("Round: " + currentRound, 10, 60);
   ctx.fillText("Currency: $" + currency, 10, 90);
   
-  // Draw the castle if not exploding.
   if (!castleExplosion) {
     ctx.drawImage(castleImage, castle.x, castle.y, castle.width, castle.height);
   } else {
@@ -786,12 +856,11 @@ function createTitleScreen() {
   titleScreen.style.flexDirection = "column";
   titleScreen.style.justifyContent = "center";
   titleScreen.style.alignItems = "center";
-  // Renamed title below.
   titleScreen.innerHTML = `
      <h1 style="font-size: 50px; margin-bottom: 20px;">Low Taper Fade Defence</h1>
      <button id="startGameButton" style="padding: 10px 20px; font-size: 20px; margin-bottom: 10px;">Start</button>
      <button id="creditsButton" style="padding: 10px 20px; font-size: 20px; margin-bottom: 10px;">Credits</button>
-     <button id="upgradesButton" style="padding: 10px 20px; font-size: 20px;">Upgrades (Coming Soon)</button>
+     <button id="upgradesButton" style="padding: 10px 20px; font-size: 20px;">Upgrades</button>
   `;
   document.body.appendChild(titleScreen);
 
@@ -802,7 +871,11 @@ function createTitleScreen() {
   document.getElementById("creditsButton").addEventListener("click", function() {
     showCreditsScreen();
   });
-  // The Upgrades button is currently a placeholder.
+  document.getElementById("upgradesButton").addEventListener("click", function() {
+    hideTitleScreen();
+    if (!upgradeShopScreen) createUpgradeShopScreen();
+    else showUpgradeShopScreen();
+  });
 }
 
 function createCreditsScreen() {
@@ -902,7 +975,7 @@ function resetGame() {
   enemySpawnTimer = 0;
   enemiesToSpawn = 0;
   playerHealth = 10;
-  currency = 150;
+  currency = BASE_CURRENCY + startingCashBonus;
   placingTowerType = null;
   previewPos = null;
   selectedTower = null;
@@ -911,14 +984,131 @@ function resetGame() {
   autoStart = false;
   gameOver = false;
   castleExplosion = null;
-  // Ensure Game Over screen is hidden.
   if (gameOverScreen) {
     gameOverScreen.style.display = "none";
   }
   updateToolbar();
 }
 
-// On load, display the title screen and hide game container.
+/*****************************
+      UPGRADE SHOP FUNCTIONS
+*****************************/
+let upgradeShopScreen;
+function createUpgradeShopScreen() {
+  upgradeShopScreen = document.createElement("div");
+  upgradeShopScreen.id = "upgradeShopScreen";
+  upgradeShopScreen.style.position = "fixed";
+  upgradeShopScreen.style.top = "0";
+  upgradeShopScreen.style.left = "0";
+  upgradeShopScreen.style.width = "100%";
+  upgradeShopScreen.style.height = "100%";
+  upgradeShopScreen.style.backgroundColor = "#222";
+  upgradeShopScreen.style.color = "#fff";
+  upgradeShopScreen.style.display = "none";
+  upgradeShopScreen.style.flexDirection = "column";
+  upgradeShopScreen.style.justifyContent = "center";
+  upgradeShopScreen.style.alignItems = "center";
+  document.body.appendChild(upgradeShopScreen);
+  updateUpgradeShopUI();
+}
+
+function updateUpgradeShopUI() {
+  let html = `<h1 style="font-size: 40px; margin-bottom: 20px;">Upgrade Shop</h1>`;
+  html += `<div style="margin-bottom: 20px; font-size: 20px;">Coins: ${coins}</div>`;
+  html += `<div style="width: 80%; max-width: 600px;">`;
+  for (let key in upgradeItems) {
+    let item = upgradeItems[key];
+    html += `<div style="border: 1px solid #555; padding: 10px; margin-bottom: 10px;">
+              <h2 style="margin: 5px 0;">${item.displayName}</h2>
+              <p style="margin: 5px 0;">${item.description}</p>
+              <p style="margin: 5px 0;">Level: ${item.level} / ${item.maxLevel}</p>
+              <p style="margin: 5px 0;">Price: ${item.level < item.maxLevel ? item.currentPrice : 'Maxed'}</p>`;
+    if (item.level < item.maxLevel) {
+      html += `<button onclick="buyUpgrade('${key}')">Buy Upgrade</button>`;
+    } else {
+      html += `<button disabled>Maxed Out</button>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+  html += `<button style="padding: 10px 20px; font-size: 20px; margin-top: 20px;" onclick="hideUpgradeShopScreen()">Back</button>`;
+  upgradeShopScreen.innerHTML = html;
+}
+
+function showUpgradeShopScreen() {
+  upgradeShopScreen.style.display = "flex";
+}
+
+function hideUpgradeShopScreen() {
+  upgradeShopScreen.style.display = "none";
+  showTitleScreen();
+}
+
+function buyUpgrade(itemId) {
+  let item = upgradeItems[itemId];
+  if (item.level >= item.maxLevel) {
+    alert("This upgrade is maxed out.");
+    return;
+  }
+  if (coins < item.currentPrice) {
+    alert("Not enough coins!");
+    return;
+  }
+  coins -= item.currentPrice;
+  item.level++;
+  item.effect();
+  if (item.level < item.maxLevel && item.multiple) {
+    item.currentPrice = Math.floor(item.currentPrice * 1.5);
+  }
+  saveGameProgress();
+  updateUpgradeShopUI();
+}
+
+/*****************************
+       PERSISTENCE FUNCTIONS
+*****************************/
+function saveGameProgress() {
+  let upgradesData = {};
+  for (let key in upgradeItems) {
+    upgradesData[key] = {
+      level: upgradeItems[key].level,
+      currentPrice: upgradeItems[key].currentPrice
+    };
+  }
+  let data = {
+    coins: coins,
+    upgrades: upgradesData,
+    startingCashBonus: startingCashBonus,
+    enemyHealthMultiplier: enemyHealthMultiplier,
+    gameSpeedMax: gameSpeedMax,
+    waveCoinsBonus: waveCoinsBonus
+  };
+  localStorage.setItem("gameProgress", JSON.stringify(data));
+}
+
+function loadGameProgress() {
+  let data = localStorage.getItem("gameProgress");
+  if (data) {
+    data = JSON.parse(data);
+    coins = data.coins || 0;
+    startingCashBonus = data.startingCashBonus || 0;
+    enemyHealthMultiplier = data.enemyHealthMultiplier || 1;
+    gameSpeedMax = data.gameSpeedMax || 2;
+    waveCoinsBonus = data.waveCoinsBonus || 2;
+    if (data.upgrades) {
+      for (let key in data.upgrades) {
+        if (upgradeItems[key]) {
+          upgradeItems[key].level = data.upgrades[key].level;
+          upgradeItems[key].currentPrice = data.upgrades[key].currentPrice;
+        }
+      }
+    }
+  }
+}
+
+/*****************************
+   INITIALIZE MENU SCREENS
+*****************************/
 gameContainer.style.display = "none";
 createTitleScreen();
 createCreditsScreen();
