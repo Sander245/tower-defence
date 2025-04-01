@@ -714,7 +714,8 @@ function createTitleScreen() {
   titleScreen.innerHTML = `
      <h1 style="font-size: 50px; margin-bottom: 20px;">Tower-Defence</h1>
      <button id="startGameButton" style="padding: 10px 20px; font-size: 20px; margin-bottom: 10px;">Start</button>
-     <button id="creditsButton" style="padding: 10px 20px; font-size: 20px;">Credits</button>
+     <button id="creditsButton" style="padding: 10px 20px; font-size: 20px; margin-bottom: 10px;">Credits</button>
+     <button id="upgradesButton" style="padding: 10px 20px; font-size: 20px;">Upgrades (Coming Soon)</button>
   `;
   document.body.appendChild(titleScreen);
 
@@ -725,6 +726,7 @@ function createTitleScreen() {
   document.getElementById("creditsButton").addEventListener("click", function() {
     showCreditsScreen();
   });
+  // The Upgrades button is a placeholder for future functionality.
 }
 
 function createCreditsScreen() {
@@ -789,7 +791,8 @@ function hideTitleScreen() {
   if (titleScreen) {
     titleScreen.style.display = "none";
   }
-  gameContainer.style.display = "block";
+  // IMPORTANT: Set display to "flex" so that the canvas and toolbar remain side-by-side.
+  gameContainer.style.display = "flex";
 }
 function showCreditsScreen() {
   if (!creditsScreen) createCreditsScreen();
@@ -811,7 +814,8 @@ function hideGameOverScreen() {
   if (gameOverScreen) {
     gameOverScreen.style.display = "none";
   }
-  gameContainer.style.display = "block";
+  // Set display back to "flex" for the game container.
+  gameContainer.style.display = "flex";
 }
 
 function resetGame() {
