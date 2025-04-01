@@ -4,9 +4,14 @@
 const canvas = document.getElementById("gameCanvas"),
       ctx = canvas.getContext("2d"),
       WIDTH = canvas.width,
-      HEIGHT = canvas.height;
+      HEIGHT = canvas.height,
+      gameContainer = document.getElementById("gameContainer");
 
-let towers = [], enemies = [], projectiles = [], pulses = [];
+let towers = [],
+    enemies = [],
+    projectiles = [],
+    pulses = [];
+
 let currentRound = 0,
     inRound = false,
     enemySpawnTimer = 0,
@@ -17,8 +22,11 @@ let currentRound = 0,
     previewPos = null,
     selectedTower = null,
     frameCount = 0,
-    gameSpeed = 1; // game update multiplier
-let autoStart = false; // auto‐start rounds when current round ends
+    gameSpeed = 1, // 1x or 2x
+    autoStart = false,
+    gameOver = false;  // set to true when player dies
+
+let titleScreen, creditsScreen, gameOverScreen;
 
 const towerCosts = {
   "basic": 50,
@@ -42,36 +50,61 @@ const PATH = [
 /*****************************
          CLASSES
 *****************************/
-// Enemy: basic, fast, tank, regenerator, and boss.
+// Enemy: basic, fast, tank, regenerator, boss.
 class Enemy {
   constructor(type) {
     this.path = [...PATH];
     this.pos = { ...this.path[0] };
     this.targetIndex = 1;
     this.type = type;
+    
     if (type === "basic") {
-      this.speed = 0.6; this.maxHealth = 90; this.radius = 10;
-      this.color = "red"; this.coinReward = 10;
+      this.speed = 0.6;
+      this.maxHealth = 90;
+      this.radius = 10;
+      this.color = "red";
+      this.coinReward = Math.floor(10 * 0.5); // half reward
     } else if (type === "fast") {
-      this.speed = 1.4; this.maxHealth = 70; this.radius = 8;
-      this.color = "orange"; this.coinReward = 15;
+      this.speed = 1.4;
+      this.maxHealth = 70;
+      this.radius = 8;
+      this.color = "orange";
+      this.coinReward = Math.floor(15 * 0.5);
     } else if (type === "tank") {
-      this.speed = 0.5; this.maxHealth = 200; this.radius = 12;
-      this.color = "brown"; this.coinReward = 20;
+      this.speed = 0.5;
+      this.maxHealth = 200;
+      this.radius = 12;
+      this.color = "brown";
+      this.coinReward = Math.floor(20 * 0.5);
     } else if (type === "regenerator") {
-      this.speed = 0.6; this.maxHealth = 150; this.radius = 10;
-      this.color = "teal"; this.coinReward = 25;
-      this.attackCooldown = 180; this.lastAttack = -180;
+      this.speed = 0.6;
+      this.maxHealth = 150;
+      this.radius = 10;
+      this.color = "teal";
+      this.coinReward = Math.floor(25 * 0.5);
+      this.attackCooldown = 180;
+      this.lastAttack = -180;
     } else if (type === "boss") {
-      // Boss enemy: Big, slow, and very durable.
-      this.speed = 0.3; this.maxHealth = 1000; this.radius = 30;
-      this.color = "black"; this.coinReward = 100;
+      // Boss enemy: big, slow, and very durable.
+      this.speed = 0.3;
+      this.maxHealth = 1000;
+      this.radius = 30;
+      this.color = "black";
+      this.coinReward = Math.floor(100 * 0.5);
     }
+    
+    // Scale enemy health based on round (5% increase per round past the first)
+    let scale = 1 + (currentRound - 1) * 0.05;
+    if (scale < 1) scale = 1;
+    this.maxHealth = Math.floor(this.maxHealth * scale);
     this.health = this.maxHealth;
+    
     this.baseSpeed = this.speed;
     this.slowTimer = 0;
   }
+  
   update() {
+    // Regenerator enemy heals over time and can slow towers.
     if (this.type === "regenerator") {
       this.health = Math.min(this.health + 0.2, this.maxHealth);
       if (frameCount - this.lastAttack >= this.attackCooldown) {
@@ -85,9 +118,11 @@ class Enemy {
     }
     let effectiveSpeed = this.baseSpeed;
     if (this.slowTimer > 0) { effectiveSpeed *= 0.5; this.slowTimer--; }
+    
     if (this.targetIndex < this.path.length) {
       let target = this.path[this.targetIndex],
-          dx = target.x - this.pos.x, dy = target.y - this.pos.y,
+          dx = target.x - this.pos.x,
+          dy = target.y - this.pos.y,
           dist = Math.hypot(dx, dy);
       if (dist !== 0) {
         this.pos.x += (dx / dist) * effectiveSpeed;
@@ -96,17 +131,18 @@ class Enemy {
       if (dist < effectiveSpeed) this.targetIndex++;
     }
   }
+  
   draw() {
     ctx.fillStyle = this.color;
     ctx.beginPath();
     ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
-    // Health bar
+    // Draw health bar
     let barW = 20, barH = 4, ratio = this.health / this.maxHealth;
     ctx.fillStyle = "black";
-    ctx.fillRect(this.pos.x - barW/2, this.pos.y - this.radius - 10, barW, barH);
+    ctx.fillRect(this.pos.x - barW / 2, this.pos.y - this.radius - 10, barW, barH);
     ctx.fillStyle = "green";
-    ctx.fillRect(this.pos.x - barW/2, this.pos.y - this.radius - 10, barW * ratio, barH);
+    ctx.fillRect(this.pos.x - barW / 2, this.pos.y - this.radius - 10, barW * ratio, barH);
   }
 }
 
@@ -120,6 +156,7 @@ class Tower {
     this.maxUpgrades = 3;
     this.specialAbilityUnlocked = false;
     this.attackSlowTimer = 0;
+    
     if (type === "basic") {
       this.range = 100; this.damage = 20; this.cooldown = 60; this.color = "blue";
     } else if (type === "sniper") {
@@ -133,14 +170,17 @@ class Tower {
     }
     this.radius = 15;
   }
+  
   update() {
     if (this.timer > 0) this.timer--;
     if (this.attackSlowTimer > 0) { this.attackSlowTimer--; return; }
+    
     let target = null, minDist = Infinity;
     for (let enemy of enemies) {
       let d = Math.hypot(enemy.pos.x - this.pos.x, enemy.pos.y - this.pos.y);
       if (d <= this.range && d < minDist) { minDist = d; target = enemy; }
     }
+    
     if (target && this.timer <= 0) {
       if (this.type === "splash") {
         pulses.push(new Pulse(this.pos, this.range, this.damage, 30));
@@ -168,6 +208,7 @@ class Tower {
       this.timer = this.cooldown;
     }
   }
+  
   draw(sel = false) {
     ctx.fillStyle = sel ? "grey" : this.color;
     ctx.beginPath();
@@ -185,6 +226,7 @@ class Tower {
     ctx.textBaseline = "middle";
     ctx.fillText(this.level, this.pos.x, this.pos.y);
   }
+  
   upgrade(stat) {
     if (this.level < this.maxUpgrades) {
       if (stat === "damage") this.damage += Math.floor(this.damage * 0.5);
@@ -217,6 +259,7 @@ class Projectile {
     this.radius = 5;
     this.active = true;
   }
+  
   update() {
     this.pos.x += this.dx * this.speed;
     this.pos.y += this.dy * this.speed;
@@ -226,6 +269,7 @@ class Projectile {
       this.active = false;
     }
   }
+  
   draw() {
     ctx.fillStyle = "black";
     ctx.beginPath();
@@ -235,7 +279,7 @@ class Projectile {
 }
 
 // Pulse class for the splash tower.
-// Uses an ease‑out cubic function for fast initial expansion that decelerates at the end.
+// Uses an ease‑out cubic function.
 class Pulse {
   constructor(center, maxRadius, damage, duration = 30) {
     this.center = { ...center };
@@ -245,6 +289,7 @@ class Pulse {
     this.frame = 0;
     this.hitEnemies = new Set();
   }
+  
   update() {
     this.frame++;
     let t = this.frame / this.duration;
@@ -260,6 +305,7 @@ class Pulse {
       }
     }
   }
+  
   draw() {
     const alpha = 1 - (this.frame / this.duration);
     ctx.strokeStyle = `rgba(0,128,0,${alpha})`;
@@ -268,6 +314,7 @@ class Pulse {
     ctx.arc(this.center.x, this.center.y, this.currentRadius, 0, Math.PI * 2);
     ctx.stroke();
   }
+  
   isDone() { return this.frame >= this.duration; }
 }
 
@@ -279,16 +326,20 @@ function startRound() {
   inRound = true;
   enemiesToSpawn = 3 + currentRound;
   enemySpawnTimer = 0;
-  // On wave 7 spawn a boss enemy.
+  
+  // On wave 7, in addition to normal spawns, add a boss enemy.
   if (currentRound === 7) {
     enemies.push(new Enemy("boss"));
   }
+  
   updateToolbar();
 }
+
 function randomEnemyType() {
   let roll = Math.random();
-  if (currentRound < 3) { return (roll < 0.8) ? "basic" : "fast"; }
-  else if (currentRound < 5) {
+  if (currentRound < 3) { 
+    return (roll < 0.8) ? "basic" : "fast"; 
+  } else if (currentRound < 5) {
     if (roll < 0.6) return "basic";
     else if (roll < 0.9) return "fast";
     else return "tank";
@@ -304,13 +355,11 @@ function randomEnemyType() {
       TOOLBAR (UI) FUNCTIONS
 *****************************/
 function updateToolbar() {
-  // Build the header and currency info.
   let html = `<div class="toolbar-header">
                   <h3>${selectedTower ? "Defender Options" : "Defender Shop"}</h3>
                   <div><strong>Currency:</strong> $${currency}</div>
               </div>`;
   if (selectedTower) {
-    // Tower upgrade and removal options.
     html += `<div><strong>Type:</strong> ${selectedTower.type}</div>
              <div><strong>Level:</strong> ${selectedTower.level}</div>
              <div><strong>Damage:</strong> ${selectedTower.damage}</div>
@@ -328,7 +377,6 @@ function updateToolbar() {
              <button id="deleteButton">Delete (Refund 75%)</button>
              <button id="cancelSelectionButton">Cancel</button>`;
   } else {
-    // Build shop items conditionally based on currentRound.
     html += `<button class="shop-item" data-type="basic">Basic Defender ($50)</button>`;
     if (currentRound >= 4) {
       html += `<button class="shop-item" data-type="sniper">Sniper Defender ($75)</button>`;
@@ -374,26 +422,25 @@ function updateToolbar() {
     });
   }
   
-  // Global controls event listeners.
   let autoCheckbox = document.getElementById("autoStartCheckbox");
-  if(autoCheckbox) {
+  if (autoCheckbox) {
     autoCheckbox.addEventListener("change", function() {
       autoStart = this.checked;
     });
   }
   
   let speedBtn = document.getElementById("speedToggleButton");
-  if(speedBtn) {
+  if (speedBtn) {
     speedBtn.addEventListener("click", function() {
       gameSpeed = gameSpeed === 1 ? 2 : 1;
-      updateToolbar(); // Update the button text accordingly.
+      updateToolbar();
     });
   }
   
-  // Show the "Start Round" button if not currently in a round.
   if (!inRound) startRoundButton.style.display = "block";
   else startRoundButton.style.display = "none";
 }
+
 function attemptUpgrade(tower, stat) {
   let cost = (tower.level < tower.maxUpgrades) ? 40 : 60;
   if (currency >= cost) { currency -= cost; tower.upgrade(stat); }
@@ -428,7 +475,6 @@ function createCheatPanel() {
   input.style.color = "white";
   cheatPanel.appendChild(input);
   
-  // Create a toggle dropdown for command list
   let toggleButton = document.createElement("div");
   toggleButton.innerHTML = "▼ Commands";
   toggleButton.style.cursor = "pointer";
@@ -442,7 +488,7 @@ function createCheatPanel() {
   commandList.style.display = "none";
   commandList.style.marginTop = "5px";
   commandList.innerHTML = `
-    <ul style="list-style-type: none; padding-left: 0; margin: 0;">
+    <ul style="list-style-type: none; padding: 0; margin: 0;">
       <li>set money [amount]</li>
       <li>set gamespeed [value]</li>
       <li>start wave [number]</li>
@@ -527,7 +573,20 @@ canvas.addEventListener("click", e => {
        UPDATE & DRAW FUNCTIONS
 *****************************/
 function updateGameState() {
+  // If the player is dead, halt game updates.
+  if (playerHealth <= 0) {
+    if (!gameOver) {
+      autoStart = false;
+      gameSpeed = 1;
+      updateToolbar();
+      gameOver = true;
+      showGameOverScreen();
+    }
+    return;
+  }
+  
   frameCount++;
+  
   if (inRound && enemiesToSpawn > 0) {
     enemySpawnTimer++;
     if (enemySpawnTimer >= 60) {
@@ -536,12 +595,14 @@ function updateGameState() {
       enemiesToSpawn--;
     }
   }
+  
   towers.forEach(t => t.update());
   enemies.forEach(e => e.update());
   projectiles.forEach(p => p.update());
   projectiles = projectiles.filter(p => p.active);
   pulses.forEach(pulse => pulse.update());
   pulses = pulses.filter(pulse => !pulse.isDone());
+  
   // Process enemy deaths and escapes.
   for (let i = enemies.length - 1; i >= 0; i--) {
     let enemy = enemies[i];
@@ -553,10 +614,10 @@ function updateGameState() {
         newEnemy.targetIndex = enemy.targetIndex;
         enemies.push(newEnemy);
       } else if (enemy.type === "boss") {
-        // When the boss dies, break into 3 tank enemies.
+        // When the boss dies, spawn 3 tank enemies spaced apart.
         for (let j = 0; j < 3; j++) {
           let tank = new Enemy("tank");
-          tank.pos = { ...enemy.pos };
+          tank.pos = { x: enemy.pos.x + (j - 1) * 20, y: enemy.pos.y }; 
           tank.targetIndex = enemy.targetIndex;
           enemies.push(tank);
         }
@@ -568,24 +629,29 @@ function updateGameState() {
       enemies.splice(i, 1);
     }
   }
-  // At round end, if autoStart is enabled, begin the next round after a short delay.
+  
+  // Wave completion bonus: get 5 coins when finishing a round.
   if (inRound && enemiesToSpawn === 0 && enemies.length === 0) {
+    currency += 5;
     inRound = false;
     updateToolbar();
-    if(autoStart) {
+    if (autoStart) {
       setTimeout(startRound, 1000);
     }
   }
 }
+
 function drawGame() {
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
   ctx.fillStyle = "white";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   drawPath();
+  
   towers.forEach(t => t.draw(t === selectedTower));
   enemies.forEach(e => e.draw());
   projectiles.forEach(p => p.draw());
   pulses.forEach(pulse => pulse.draw());
+  
   if (placingTowerType && previewPos) {
     let tempRange, tempColor;
     if (placingTowerType === "basic") { tempRange = 100; tempColor = "rgba(0,0,255,0.3)"; }
@@ -602,6 +668,7 @@ function drawGame() {
     ctx.arc(previewPos.x, previewPos.y, tempRange, 0, Math.PI * 2);
     ctx.stroke();
   }
+  
   ctx.fillStyle = "black";
   ctx.font = "20px Arial";
   ctx.textAlign = "left";
@@ -609,6 +676,7 @@ function drawGame() {
   ctx.fillText("Round: " + currentRound, 10, 60);
   ctx.fillText("Currency: $" + currency, 10, 90);
 }
+
 function drawPath() {
   ctx.strokeStyle = "grey";
   ctx.lineWidth = 5;
@@ -617,6 +685,7 @@ function drawPath() {
   for (let i = 1; i < PATH.length; i++) { ctx.lineTo(PATH[i].x, PATH[i].y); }
   ctx.stroke();
 }
+
 function gameLoop() {
   for (let i = 0; i < gameSpeed; i++) { updateGameState(); }
   drawGame();
@@ -624,3 +693,150 @@ function gameLoop() {
 }
 updateToolbar();
 gameLoop();
+
+/*****************************
+       MENU SCREEN FUNCTIONS
+*****************************/
+function createTitleScreen() {
+  titleScreen = document.createElement("div");
+  titleScreen.id = "titleScreen";
+  titleScreen.style.position = "fixed";
+  titleScreen.style.top = "0";
+  titleScreen.style.left = "0";
+  titleScreen.style.width = "100%";
+  titleScreen.style.height = "100%";
+  titleScreen.style.backgroundColor = "#333";
+  titleScreen.style.color = "white";
+  titleScreen.style.display = "flex";
+  titleScreen.style.flexDirection = "column";
+  titleScreen.style.justifyContent = "center";
+  titleScreen.style.alignItems = "center";
+  titleScreen.innerHTML = `
+     <h1 style="font-size: 50px; margin-bottom: 20px;">Tower-Defence</h1>
+     <button id="startGameButton" style="padding: 10px 20px; font-size: 20px; margin-bottom: 10px;">Start</button>
+     <button id="creditsButton" style="padding: 10px 20px; font-size: 20px;">Credits</button>
+  `;
+  document.body.appendChild(titleScreen);
+
+  document.getElementById("startGameButton").addEventListener("click", function() {
+    hideTitleScreen();
+    resetGame();
+  });
+  document.getElementById("creditsButton").addEventListener("click", function() {
+    showCreditsScreen();
+  });
+}
+
+function createCreditsScreen() {
+  creditsScreen = document.createElement("div");
+  creditsScreen.id = "creditsScreen";
+  creditsScreen.style.position = "fixed";
+  creditsScreen.style.top = "0";
+  creditsScreen.style.left = "0";
+  creditsScreen.style.width = "100%";
+  creditsScreen.style.height = "100%";
+  creditsScreen.style.backgroundColor = "#333";
+  creditsScreen.style.color = "white";
+  creditsScreen.style.display = "none";
+  creditsScreen.style.flexDirection = "column";
+  creditsScreen.style.justifyContent = "center";
+  creditsScreen.style.alignItems = "center";
+  creditsScreen.innerHTML = `
+     <h1 style="font-size: 40px; margin-bottom: 20px;">Credits</h1>
+     <p style="font-size: 24px;">sander</p>
+     <button id="backFromCreditsButton" style="padding: 10px 20px; font-size: 20px; margin-top: 20px;">Back</button>
+  `;
+  document.body.appendChild(creditsScreen);
+  
+  document.getElementById("backFromCreditsButton").addEventListener("click", function() {
+    hideCreditsScreen();
+    showTitleScreen();
+  });
+}
+
+function createGameOverScreen() {
+  gameOverScreen = document.createElement("div");
+  gameOverScreen.id = "gameOverScreen";
+  gameOverScreen.style.position = "fixed";
+  gameOverScreen.style.top = "0";
+  gameOverScreen.style.left = "0";
+  gameOverScreen.style.width = "100%";
+  gameOverScreen.style.height = "100%";
+  gameOverScreen.style.backgroundColor = "rgba(0,0,0,0.8)";
+  gameOverScreen.style.color = "white";
+  gameOverScreen.style.display = "none";
+  gameOverScreen.style.flexDirection = "column";
+  gameOverScreen.style.justifyContent = "center";
+  gameOverScreen.style.alignItems = "center";
+  gameOverScreen.innerHTML = `
+     <h1 style="font-size: 50px; margin-bottom: 20px;">You Died</h1>
+     <button id="backToTitleButton" style="padding: 10px 20px; font-size: 20px;">Back to Title</button>
+  `;
+  document.body.appendChild(gameOverScreen);
+  
+  document.getElementById("backToTitleButton").addEventListener("click", function() {
+    hideGameOverScreen();
+    showTitleScreen();
+  });
+}
+
+function showTitleScreen() {
+  if (!titleScreen) createTitleScreen();
+  titleScreen.style.display = "flex";
+  gameContainer.style.display = "none";
+}
+function hideTitleScreen() {
+  if (titleScreen) {
+    titleScreen.style.display = "none";
+  }
+  gameContainer.style.display = "block";
+}
+function showCreditsScreen() {
+  if (!creditsScreen) createCreditsScreen();
+  creditsScreen.style.display = "flex";
+  titleScreen.style.display = "none";
+}
+function hideCreditsScreen() {
+  if (creditsScreen) {
+    creditsScreen.style.display = "none";
+  }
+  titleScreen.style.display = "flex";
+}
+function showGameOverScreen() {
+  if (!gameOverScreen) createGameOverScreen();
+  gameOverScreen.style.display = "flex";
+  gameContainer.style.display = "none";
+}
+function hideGameOverScreen() {
+  if (gameOverScreen) {
+    gameOverScreen.style.display = "none";
+  }
+  gameContainer.style.display = "block";
+}
+
+function resetGame() {
+  towers = [];
+  enemies = [];
+  projectiles = [];
+  pulses = [];
+  currentRound = 0;
+  inRound = false;
+  enemySpawnTimer = 0;
+  enemiesToSpawn = 0;
+  playerHealth = 10;
+  currency = 150;
+  placingTowerType = null;
+  previewPos = null;
+  selectedTower = null;
+  frameCount = 0;
+  gameSpeed = 1;
+  autoStart = false;
+  gameOver = false;
+  updateToolbar();
+}
+
+// On load, display the title screen and hide game container.
+gameContainer.style.display = "none";
+createTitleScreen();
+createCreditsScreen();
+createGameOverScreen();
