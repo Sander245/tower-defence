@@ -340,21 +340,19 @@ class CastleExplosion {
   update() {
     this.frame++;
     let t = this.frame / this.duration;
-    // Using a linear expansion (you could use an easing function if desired)
     this.currentRadius = t * this.maxRadius;
     // Kill any enemy whose center is within the explosion.
     enemies.forEach(enemy => {
       let d = Math.hypot(enemy.pos.x - this.cx, enemy.pos.y - this.cy);
-      if(d < this.currentRadius) {
-        enemy.health = 0; // Instant kill (and no coins will be awarded).
+      if (d < this.currentRadius) {
+        enemy.health = 0; // Instant kill (and no coins awarded)
       }
     });
     // Remove towers that are caught in the explosion.
     towers = towers.filter(tower => {
       let d = Math.hypot(tower.pos.x - this.cx, tower.pos.y - this.cy);
-      if(d < this.currentRadius) {
-        // Optionally, here you could trigger a mini shockwave effect.
-        return false; // Delete tower
+      if (d < this.currentRadius) {
+        return false; // Remove tower (mini shockwave effect could be added here)
       }
       return true;
     });
@@ -431,7 +429,7 @@ function updateToolbar() {
              <button id="cancelSelectionButton">Cancel</button>`;
   } else {
     html += `<button class="shop-item" data-type="basic">Basic Defender ($50)</button>`;
-    // Tower unlock conditions adjusted to unlock one round early:
+    // Unlock conditions shifted one round early:
     if (currentRound >= 3) {
       html += `<button class="shop-item" data-type="sniper">Sniper Defender ($75)</button>`;
     }
@@ -545,6 +543,7 @@ function createCheatPanel() {
     <ul style="list-style-type: none; padding: 0; margin: 0;">
       <li>set money [amount]</li>
       <li>set gamespeed [value]</li>
+      <li>set health [amount]</li>
       <li>start wave [number]</li>
     </ul>
   `;
@@ -585,6 +584,13 @@ function handleCheatCommand(cmd) {
     } else if (parts[1] === "gamespeed") {
       let speed = parseInt(parts[2]);
       if (!isNaN(speed) && speed > 0) { gameSpeed = speed; console.log("Set game speed to", speed); }
+    } else if (parts[1] === "health") {
+      let newHealth = parseInt(parts[2]);
+      if (!isNaN(newHealth)) { 
+        playerHealth = newHealth; 
+        console.log("Set castle health to", newHealth);
+        updateToolbar();
+      }
     }
   } else if(parts[0] === "start" && parts[1] === "wave") {
     let waveNum = parseInt(parts[2]);
@@ -627,19 +633,19 @@ canvas.addEventListener("click", e => {
        UPDATE & DRAW FUNCTIONS
 *****************************/
 function updateGameState() {
-  // If the castle (and thus player) is dead, trigger and update castle explosion.
+  // If the castle (player) is dead, trigger and update castle explosion.
   if (playerHealth <= 0) {
     if (!castleExplosion) {
-      // On death, disable auto start and reset speed.
+      // On death, disable auto-start and reset speed.
       autoStart = false;
       gameSpeed = 1;
       updateToolbar();
-      // Create the explosion from the castle's center.
+      // Create explosion from the castle's center.
       castleExplosion = new CastleExplosion(castle.x + castle.width/2, castle.y + castle.height/2, 1000, 60);
     } else {
       castleExplosion.update();
-      if (castleExplosion.isDone()){
-         // Clear remaining enemies (and towers were already removed on collision) then show Game Over.
+      if (castleExplosion.isDone()) {
+         // Clear remaining enemies and show Game Over.
          enemies = [];
          showGameOverScreen();
       }
@@ -670,13 +676,13 @@ function updateGameState() {
     let enemy = enemies[i];
     if (enemy.health <= 0) {
       if (enemy.type === "tank") {
-        // Transform a dying tank enemy into a basic enemy.
+        // Transform a dying tank into a basic enemy.
         let newEnemy = new Enemy("basic");
         newEnemy.pos = { ...enemy.pos };
         newEnemy.targetIndex = enemy.targetIndex;
         enemies.push(newEnemy);
       } else if (enemy.type === "boss") {
-        // When the boss dies, spawn 3 tank enemies spaced apart.
+        // When boss dies, spawn 3 tanks spaced apart.
         for (let j = 0; j < 3; j++) {
           let tank = new Enemy("tank");
           tank.pos = { x: enemy.pos.x + (j - 1) * 20, y: enemy.pos.y };
@@ -692,7 +698,7 @@ function updateGameState() {
     }
   }
   
-  // Wave completion bonus: 5 coins for finishing a round.
+  // Wave completion bonus: 5 coins.
   if (inRound && enemiesToSpawn === 0 && enemies.length === 0) {
     currency += 5;
     inRound = false;
@@ -709,13 +715,11 @@ function drawGame() {
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   drawPath();
   
-  // Draw towers, enemies, projectiles, and pulses.
   towers.forEach(t => t.draw(t === selectedTower));
   enemies.forEach(e => e.draw());
   projectiles.forEach(p => p.draw());
   pulses.forEach(pulse => pulse.draw());
   
-  // If placing a tower, draw its preview.
   if (placingTowerType && previewPos) {
     let tempRange, tempColor;
     if (placingTowerType === "basic") { tempRange = 100; tempColor = "rgba(0,0,255,0.3)"; }
@@ -733,7 +737,6 @@ function drawGame() {
     ctx.stroke();
   }
   
-  // Draw HUD info.
   ctx.fillStyle = "black";
   ctx.font = "20px Arial";
   ctx.textAlign = "left";
@@ -741,7 +744,7 @@ function drawGame() {
   ctx.fillText("Round: " + currentRound, 10, 60);
   ctx.fillText("Currency: $" + currency, 10, 90);
   
-  // Draw the castle if it exists and is not in explosion mode.
+  // Draw the castle if not exploding.
   if (!castleExplosion) {
     ctx.drawImage(castleImage, castle.x, castle.y, castle.width, castle.height);
   } else {
@@ -783,8 +786,9 @@ function createTitleScreen() {
   titleScreen.style.flexDirection = "column";
   titleScreen.style.justifyContent = "center";
   titleScreen.style.alignItems = "center";
+  // Renamed title below.
   titleScreen.innerHTML = `
-     <h1 style="font-size: 50px; margin-bottom: 20px;">Tower-Defence</h1>
+     <h1 style="font-size: 50px; margin-bottom: 20px;">Low Taper Fade Defence</h1>
      <button id="startGameButton" style="padding: 10px 20px; font-size: 20px; margin-bottom: 10px;">Start</button>
      <button id="creditsButton" style="padding: 10px 20px; font-size: 20px; margin-bottom: 10px;">Credits</button>
      <button id="upgradesButton" style="padding: 10px 20px; font-size: 20px;">Upgrades (Coming Soon)</button>
@@ -863,7 +867,6 @@ function hideTitleScreen() {
   if (titleScreen) {
     titleScreen.style.display = "none";
   }
-  // Display as flex so that canvas and toolbar remain side-by-side.
   gameContainer.style.display = "flex";
 }
 function showCreditsScreen() {
@@ -886,7 +889,6 @@ function hideGameOverScreen() {
   if (gameOverScreen) {
     gameOverScreen.style.display = "none";
   }
-  // Set display back to flex for proper layout.
   gameContainer.style.display = "flex";
 }
 
@@ -909,10 +911,14 @@ function resetGame() {
   autoStart = false;
   gameOver = false;
   castleExplosion = null;
+  // Ensure Game Over screen is hidden.
+  if (gameOverScreen) {
+    gameOverScreen.style.display = "none";
+  }
   updateToolbar();
 }
 
-// On load, display the title screen and hide the game container.
+// On load, display the title screen and hide game container.
 gameContainer.style.display = "none";
 createTitleScreen();
 createCreditsScreen();
