@@ -6,6 +6,35 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- TITLE SCREEN -->
+  <div id="titleScreen">
+    <h1>Low Taper Fade Defence</h1>
+    <button id="startGameButton">Start</button>
+    <button id="creditsButton">Credits</button>
+    <button id="upgradesButton">Upgrades</button>
+  </div>
+
+  <!-- CREDITS SCREEN -->
+  <div id="creditsScreen">
+    <h1>Credits</h1>
+    <p style="font-size: 24px;">sander</p>
+    <button id="backFromCreditsButton">Back</button>
+  </div>
+
+  <!-- UPGRADE SHOP SCREEN -->
+  <div id="upgradeShopScreen">
+    <h1>Upgrade Shop</h1>
+    <div id="upgradeShopContent"></div>
+    <button id="backFromUpgradeButton">Back</button>
+  </div>
+
+  <!-- GAME OVER SCREEN -->
+  <div id="gameOverScreen">
+    <h1>You Died</h1>
+    <button id="backToTitleButton">Back to Title</button>
+  </div>
+
+  <!-- GAME CONTAINER -->
   <div id="gameContainer">
     <canvas id="gameCanvas" width="800" height="600"></canvas>
     <div id="toolbar">
@@ -13,7 +42,8 @@
       <button id="startRoundButton">Start Round</button>
     </div>
   </div>
-  <!-- The cheat panel is created dynamically when toggled -->
+  
+  <!-- Cheat Panel will be created dynamically -->
   <script src="game.js"></script>
 </body>
 </html>
