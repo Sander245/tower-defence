@@ -871,8 +871,10 @@ function createTitleScreen() {
   document.getElementById("creditsButton").addEventListener("click", function() {
     showCreditsScreen();
   });
+  // FIX: Upgrades button – instead of calling hideTitleScreen() (which shows the gameContainer),
+  // simply hide the title screen so the upgrade shop (like credits) can be shown.
   document.getElementById("upgradesButton").addEventListener("click", function() {
-    hideTitleScreen();
+    titleScreen.style.display = "none";
     if (!upgradeShopScreen) createUpgradeShopScreen();
     else showUpgradeShopScreen();
   });
@@ -940,6 +942,7 @@ function hideTitleScreen() {
   if (titleScreen) {
     titleScreen.style.display = "none";
   }
+  // For the game start, show the game container.
   gameContainer.style.display = "flex";
 }
 function showCreditsScreen() {
