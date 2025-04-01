@@ -7,7 +7,6 @@ const canvas = document.getElementById("gameCanvas"),
       HEIGHT = canvas.height;
 
 let towers = [], enemies = [], projectiles = [], pulses = [];
-
 let currentRound = 0,
     inRound = false,
     enemySpawnTimer = 0,
@@ -19,6 +18,7 @@ let currentRound = 0,
     selectedTower = null,
     frameCount = 0,
     gameSpeed = 1; // game update multiplier
+let autoStart = false; // auto‐start rounds when current round ends
 
 const towerCosts = {
   "basic": 50,
@@ -42,7 +42,7 @@ const PATH = [
 /*****************************
          CLASSES
 *****************************/
-// Enemy: basic (red), fast, tank, regenerator.
+// Enemy: basic, fast, tank, regenerator, and boss.
 class Enemy {
   constructor(type) {
     this.path = [...PATH];
@@ -62,6 +62,10 @@ class Enemy {
       this.speed = 0.6; this.maxHealth = 150; this.radius = 10;
       this.color = "teal"; this.coinReward = 25;
       this.attackCooldown = 180; this.lastAttack = -180;
+    } else if (type === "boss") {
+      // Boss enemy: Big, slow, and very durable.
+      this.speed = 0.3; this.maxHealth = 1000; this.radius = 30;
+      this.color = "black"; this.coinReward = 100;
     }
     this.health = this.maxHealth;
     this.baseSpeed = this.speed;
@@ -97,6 +101,7 @@ class Enemy {
     ctx.beginPath();
     ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
+    // Health bar
     let barW = 20, barH = 4, ratio = this.health / this.maxHealth;
     ctx.fillStyle = "black";
     ctx.fillRect(this.pos.x - barW/2, this.pos.y - this.radius - 10, barW, barH);
@@ -105,7 +110,7 @@ class Enemy {
   }
 }
 
-// Tower: types: basic, sniper, splash, slow, smart.
+// Tower: basic, sniper, splash, slow, smart.
 class Tower {
   constructor(pos, type) {
     this.pos = { ...pos };
@@ -120,7 +125,6 @@ class Tower {
     } else if (type === "sniper") {
       this.range = 150; this.damage = 40; this.cooldown = 120; this.color = "purple";
     } else if (type === "splash") {
-      // Pulse expands using easing over 30 frames and cooldown is 18 frames.
       this.range = 120; this.damage = 25; this.cooldown = 18; this.color = "green";
     } else if (type === "slow") {
       this.range = 80; this.damage = 10; this.cooldown = 50; this.color = "cyan";
@@ -275,6 +279,10 @@ function startRound() {
   inRound = true;
   enemiesToSpawn = 3 + currentRound;
   enemySpawnTimer = 0;
+  // On wave 7 spawn a boss enemy.
+  if (currentRound === 7) {
+    enemies.push(new Enemy("boss"));
+  }
   updateToolbar();
 }
 function randomEnemyType() {
@@ -296,32 +304,56 @@ function randomEnemyType() {
       TOOLBAR (UI) FUNCTIONS
 *****************************/
 function updateToolbar() {
+  // Build the header and currency info.
   let html = `<div class="toolbar-header">
-                  <h3>Defender Shop</h3>
+                  <h3>${selectedTower ? "Defender Options" : "Defender Shop"}</h3>
                   <div><strong>Currency:</strong> $${currency}</div>
               </div>`;
   if (selectedTower) {
-    html = `<div class="toolbar-header">
-              <h3>Defender Options</h3>
-              <div><strong>Currency:</strong> $${currency}</div>
-            </div>
-            <div><strong>Type:</strong> ${selectedTower.type}</div>
-            <div><strong>Level:</strong> ${selectedTower.level}</div>
-            <div><strong>Damage:</strong> ${selectedTower.damage}</div>
-            <div><strong>Range:</strong> ${selectedTower.range}</div>
-            <div><strong>Cooldown:</strong> ${selectedTower.cooldown}</div>
-            ${
-              selectedTower.level < selectedTower.maxUpgrades
-              ? `<button id="upgradeDamage">Upgrade Damage ($40)</button>
-                 <button id="upgradeRange">Upgrade Range ($40)</button>
-                 <button id="upgradeCooldown">Upgrade Cooldown ($40)</button>`
-              : !selectedTower.specialAbilityUnlocked
-              ? `<button id="finalUpgrade">Final Upgrade ($60)</button>`
-              : `<div>Max Upgrades Achieved</div>`
-            }
-            <button id="deleteButton">Delete (Refund 75%)</button>
-            <button id="cancelSelectionButton">Cancel</button>`;
-    toolbarContent.innerHTML = html;
+    // Tower upgrade and removal options.
+    html += `<div><strong>Type:</strong> ${selectedTower.type}</div>
+             <div><strong>Level:</strong> ${selectedTower.level}</div>
+             <div><strong>Damage:</strong> ${selectedTower.damage}</div>
+             <div><strong>Range:</strong> ${selectedTower.range}</div>
+             <div><strong>Cooldown:</strong> ${selectedTower.cooldown}</div>
+             ${
+               selectedTower.level < selectedTower.maxUpgrades
+               ? `<button id="upgradeDamage">Upgrade Damage ($40)</button>
+                  <button id="upgradeRange">Upgrade Range ($40)</button>
+                  <button id="upgradeCooldown">Upgrade Cooldown ($40)</button>`
+               : !selectedTower.specialAbilityUnlocked
+               ? `<button id="finalUpgrade">Final Upgrade ($60)</button>`
+               : `<div>Max Upgrades Achieved</div>`
+             }
+             <button id="deleteButton">Delete (Refund 75%)</button>
+             <button id="cancelSelectionButton">Cancel</button>`;
+  } else {
+    // Build shop items conditionally based on currentRound.
+    html += `<button class="shop-item" data-type="basic">Basic Defender ($50)</button>`;
+    if (currentRound >= 4) {
+      html += `<button class="shop-item" data-type="sniper">Sniper Defender ($75)</button>`;
+    }
+    if (currentRound >= 8) {
+      html += `<button class="shop-item" data-type="slow">Slow Defender ($80)</button>`;
+    }
+    if (currentRound >= 14) {
+      html += `<button class="shop-item" data-type="smart">Smart Defender ($120)</button>`;
+    }
+    if (currentRound >= 18) {
+      html += `<button class="shop-item" data-type="splash">Splash Defender ($100)</button>`;
+    }
+  }
+  
+  // Global controls: Auto‑Start checkbox and Speed Toggle button.
+  html += `<div class="global-controls" style="margin-top: 10px; text-align: center;">
+             <label><input type="checkbox" id="autoStartCheckbox" ${autoStart ? "checked" : ""}> Auto-Start Rounds</label>
+             <br>
+             <button id="speedToggleButton" style="margin-top: 5px;">${gameSpeed === 1 ? "2x Speed" : "1x Speed"}</button>
+           </div>`;
+  
+  toolbarContent.innerHTML = html;
+  
+  if (selectedTower) {
     if (selectedTower.level < selectedTower.maxUpgrades) {
       document.getElementById("upgradeDamage").addEventListener("click", () => { attemptUpgrade(selectedTower, "damage"); });
       document.getElementById("upgradeRange").addEventListener("click", () => { attemptUpgrade(selectedTower, "range"); });
@@ -337,19 +369,28 @@ function updateToolbar() {
     });
     document.getElementById("cancelSelectionButton").addEventListener("click", () => { selectedTower = null; updateToolbar(); });
   } else {
-    html += `
-      <button class="shop-item" data-type="basic">Basic Defender ($50)</button>
-      <button class="shop-item" data-type="sniper">Sniper Defender ($75)</button>
-      <button class="shop-item" data-type="splash">Splash Defender ($100)</button>
-      <button class="shop-item" data-type="slow">Slow Defender ($80)</button>
-      <button class="shop-item" data-type="smart">Smart Defender ($120)</button>
-    `;
-    toolbarContent.innerHTML = html;
     document.querySelectorAll(".shop-item").forEach(item => {
       item.addEventListener("click", () => { placingTowerType = item.getAttribute("data-type"); });
     });
   }
-  // Show the "Start Round" button if not in round.
+  
+  // Global controls event listeners.
+  let autoCheckbox = document.getElementById("autoStartCheckbox");
+  if(autoCheckbox) {
+    autoCheckbox.addEventListener("change", function() {
+      autoStart = this.checked;
+    });
+  }
+  
+  let speedBtn = document.getElementById("speedToggleButton");
+  if(speedBtn) {
+    speedBtn.addEventListener("click", function() {
+      gameSpeed = gameSpeed === 1 ? 2 : 1;
+      updateToolbar(); // Update the button text accordingly.
+    });
+  }
+  
+  // Show the "Start Round" button if not currently in a round.
   if (!inRound) startRoundButton.style.display = "block";
   else startRoundButton.style.display = "none";
 }
@@ -418,7 +459,6 @@ function createCheatPanel() {
       toggleButton.innerHTML = "▼ Commands";
     }
   });
-  
   document.body.appendChild(cheatPanel);
   input.focus();
   input.addEventListener("keydown", function(e) {
@@ -490,7 +530,11 @@ function updateGameState() {
   frameCount++;
   if (inRound && enemiesToSpawn > 0) {
     enemySpawnTimer++;
-    if (enemySpawnTimer >= 60) { enemies.push(new Enemy(randomEnemyType())); enemySpawnTimer = 0; enemiesToSpawn--; }
+    if (enemySpawnTimer >= 60) {
+      enemies.push(new Enemy(randomEnemyType()));
+      enemySpawnTimer = 0;
+      enemiesToSpawn--;
+    }
   }
   towers.forEach(t => t.update());
   enemies.forEach(e => e.update());
@@ -501,13 +545,36 @@ function updateGameState() {
   // Process enemy deaths and escapes.
   for (let i = enemies.length - 1; i >= 0; i--) {
     let enemy = enemies[i];
-    if (enemy.health <= 0) { currency += enemy.coinReward; enemies.splice(i, 1); }
-    else if (enemy.targetIndex >= enemy.path.length) { playerHealth--; enemies.splice(i, 1); }
+    if (enemy.health <= 0) {
+      if (enemy.type === "tank") {
+        // Transform a dying tank enemy into a basic enemy.
+        let newEnemy = new Enemy("basic");
+        newEnemy.pos = { ...enemy.pos };
+        newEnemy.targetIndex = enemy.targetIndex;
+        enemies.push(newEnemy);
+      } else if (enemy.type === "boss") {
+        // When the boss dies, break into 3 tank enemies.
+        for (let j = 0; j < 3; j++) {
+          let tank = new Enemy("tank");
+          tank.pos = { ...enemy.pos };
+          tank.targetIndex = enemy.targetIndex;
+          enemies.push(tank);
+        }
+      }
+      currency += enemy.coinReward;
+      enemies.splice(i, 1);
+    } else if (enemy.targetIndex >= enemy.path.length) {
+      playerHealth--;
+      enemies.splice(i, 1);
+    }
   }
-  // When round is over, show the Start Round button.
+  // At round end, if autoStart is enabled, begin the next round after a short delay.
   if (inRound && enemiesToSpawn === 0 && enemies.length === 0) {
     inRound = false;
     updateToolbar();
+    if(autoStart) {
+      setTimeout(startRound, 1000);
+    }
   }
 }
 function drawGame() {
@@ -557,18 +624,3 @@ function gameLoop() {
 }
 updateToolbar();
 gameLoop();
-
-function randomEnemyType() {
-  let roll = Math.random();
-  if (currentRound < 3) { return (roll < 0.8) ? "basic" : "fast"; }
-  else if (currentRound < 5) {
-    if (roll < 0.6) return "basic";
-    else if (roll < 0.9) return "fast";
-    else return "tank";
-  } else {
-    if (roll < 0.5) return "basic";
-    else if (roll < 0.7) return "fast";
-    else if (roll < 0.9) return "tank";
-    else return "regenerator";
-  }
-}
