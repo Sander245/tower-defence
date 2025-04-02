@@ -14,13 +14,17 @@ const creditsScreen = document.getElementById("creditsScreen");
 const upgradeShopScreen = document.getElementById("upgradeShopScreen");
 const upgradeShopContent = document.getElementById("upgradeShopContent");
 const gameOverScreen = document.getElementById("gameOverScreen");
+const settingsScreen = document.getElementById("settingsScreen");
 
 const startGameButton = document.getElementById("startGameButton");
 const creditsButton = document.getElementById("creditsButton");
 const upgradesButton = document.getElementById("upgradesButton");
+const settingsButton = document.getElementById("settingsButton");
 const backFromCreditsButton = document.getElementById("backFromCreditsButton");
 const backFromUpgradeButton = document.getElementById("backFromUpgradeButton");
 const backToTitleButton = document.getElementById("backToTitleButton");
+const applySettingsButton = document.getElementById("applySettingsButton");
+const backFromSettingsButton = document.getElementById("backFromSettingsButton");
 
 const startRoundButton = document.getElementById("startRoundButton");
 const toolbarContent = document.getElementById("toolbar-content");
@@ -48,15 +52,19 @@ let currentRound = 0,
     selectedTower = null,
     frameCount = 0,
     gameSpeed = 1, // starting speed
+    gameSpeedModifier = 1, // new performance modifier
     autoStart = false,
-    gameOver = false;
+    gameOver = false,
+    theme = "light", // theme setting
+    coinsEarnedThisGame = 0; // track coins earned in current game
 
-const towerCosts = {
+let towerCosts = {
   "basic": 50,
   "sniper": 75,
   "splash": 100,
   "slow": 80,
-  "smart": 120
+  "smart": 120,
+  "laser": 85
 };
 
 const PATH = [
@@ -73,6 +81,7 @@ let startingCashBonus = 0;
 let enemyHealthMultiplier = 1;
 let gameSpeedMax = 2;
 let waveCoinsBonus = 2;
+let towerBulletSpeedBonus = 0; // New global variable for bullet speed bonus
 const BASE_CURRENCY = 150;
 
 // Reduce base prices roughly by a factor of 10 (so 200 becomes 20, etc.)
@@ -98,6 +107,17 @@ let upgradeItems = {
     currentPrice: 15,
     multiple: true,
     effect: function () { enemyHealthMultiplier *= 0.9; }
+  },
+  fasterBullets: {
+    id: "fasterBullets",
+    displayName: "Faster Bullets",
+    description: "Increase bullet speed for all towers by 10% per level.",
+    level: 0,
+    maxLevel: 5,
+    basePrice: 12,
+    currentPrice: 12,
+    multiple: true,
+    effect: function () { towerBulletSpeedBonus += 0.1; }
   },
   fastGameSpeed: {
     id: "fastGameSpeed",
@@ -136,7 +156,7 @@ let endRoundTimeout = null;
          CLASSES
 *****************************/
 // (Enemy, Tower, Projectile, Pulse, CastleExplosion remain the same as before.)
-  
+
 class Enemy {
   constructor(type) {
     this.path = [...PATH];
@@ -145,25 +165,25 @@ class Enemy {
     this.type = type;
     
     if (type === "basic") {
-      this.speed = 0.6;
+      this.speed = 0.4; // reduced from 0.6
       this.maxHealth = 90;
       this.radius = 10;
       this.color = "red";
       this.coinReward = Math.floor(10 * 0.5);
     } else if (type === "fast") {
-      this.speed = 1.4;
+      this.speed = 0.8; // reduced from 1.4
       this.maxHealth = 70;
       this.radius = 8;
       this.color = "orange";
       this.coinReward = Math.floor(15 * 0.5);
     } else if (type === "tank") {
-      this.speed = 0.5;
+      this.speed = 0.3; // reduced from 0.5
       this.maxHealth = 200;
       this.radius = 12;
       this.color = "brown";
       this.coinReward = Math.floor(20 * 0.5);
     } else if (type === "regenerator") {
-      this.speed = 0.6;
+      this.speed = 0.4; // reduced from 0.6
       this.maxHealth = 150;
       this.radius = 10;
       this.color = "teal";
@@ -171,7 +191,7 @@ class Enemy {
       this.attackCooldown = 180;
       this.lastAttack = -180;
     } else if (type === "boss") {
-      this.speed = 0.3;
+      this.speed = 0.2; // reduced from 0.3
       this.maxHealth = 1000;
       this.radius = 30;
       this.color = "black";
@@ -199,7 +219,7 @@ class Enemy {
         if (nearestTower) { nearestTower.attackSlowTimer = 90; this.lastAttack = frameCount; }
       }
     }
-    let effectiveSpeed = this.baseSpeed;
+    let effectiveSpeed = this.baseSpeed * gameSpeedModifier;
     if (this.slowTimer > 0) { effectiveSpeed *= 0.5; this.slowTimer--; }
     
     if (this.targetIndex < this.path.length) {
@@ -237,6 +257,9 @@ class Tower {
     this.maxUpgrades = 3;
     this.specialAbilityUnlocked = false;
     this.attackSlowTimer = 0;
+    this.bulletSpeedLevel = 0; // This is now only modified globally
+    this.laserAlpha = 0; // For laser tower visual effect
+    this.laserTarget = null; // For storing laser target
     
     if (type === "basic") {
       this.range = 100; this.damage = 20; this.cooldown = 60; this.color = "blue";
@@ -248,13 +271,22 @@ class Tower {
       this.range = 80; this.damage = 10; this.cooldown = 50; this.color = "cyan";
     } else if (type === "smart") {
       this.range = 180; this.damage = 15; this.cooldown = 40; this.color = "gold";
+    } else if (type === "laser") {
+      this.range = 130; this.damage = 35; this.cooldown = 90; this.color = "orangered";
     }
     this.radius = 15;
+    this.bulletSpeed = 2.5 + towerBulletSpeedBonus; // Base bullet speed with global bonus
   }
   
   update() {
     if (this.timer > 0) this.timer--;
     if (this.attackSlowTimer > 0) { this.attackSlowTimer--; return; }
+    
+    // Handle laser effect fade out
+    if (this.type === "laser" && this.laserAlpha > 0) {
+      this.laserAlpha -= 0.1;
+    }
+    
     let target = null, minDist = Infinity;
     for (let enemy of enemies) {
       let d = Math.hypot(enemy.pos.x - this.pos.x, enemy.pos.y - this.pos.y);
@@ -263,8 +295,14 @@ class Tower {
     if (target && this.timer <= 0) {
       if (this.type === "splash") {
         pulses.push(new Pulse(this.pos, this.range, this.damage, 30));
+      } else if (this.type === "laser") {
+        // Direct damage to target - no projectile needed
+        target.health -= this.damage;
+        // Set laser effect properties
+        this.laserTarget = target;
+        this.laserAlpha = 1.0;
       } else if (this.type === "smart") {
-        const speed = 8,
+        const speed = this.bulletSpeed + this.bulletSpeedLevel * 0.5,
               dx = target.pos.x - this.pos.x,
               dy = target.pos.y - this.pos.y,
               distance = Math.hypot(dx, dy),
@@ -279,9 +317,11 @@ class Tower {
               };
         projectiles.push(new Projectile(this.pos, target, this.damage, speed, "smart", predictedPos));
       } else if (this.type === "slow") {
-        projectiles.push(new Projectile(this.pos, target, this.damage, 5, "slow"));
+        projectiles.push(new Projectile(this.pos, target, this.damage, this.bulletSpeed + this.bulletSpeedLevel * 0.5, "slow"));
       } else {
-        const bulletSpeed = (this.type === "sniper") ? 8 : 5;
+        const bulletSpeed = (this.type === "sniper") ? 
+          this.bulletSpeed + 1 + this.bulletSpeedLevel * 0.5 : 
+          this.bulletSpeed + this.bulletSpeedLevel * 0.5;
         projectiles.push(new Projectile(this.pos, target, this.damage, bulletSpeed));
       }
       this.timer = this.cooldown;
@@ -293,6 +333,37 @@ class Tower {
     ctx.beginPath();
     ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
+    
+    // Draw laser effect
+    if (this.type === "laser" && this.laserAlpha > 0 && this.laserTarget) {
+      // Create a "static" effect with random offsets
+      const staticEffect = Math.random() * 2 - 1;
+      const offsetX = staticEffect;
+      const offsetY = staticEffect;
+      
+      // Draw the laser beam
+      ctx.beginPath();
+      ctx.moveTo(this.pos.x, this.pos.y);
+      ctx.lineTo(
+        this.laserTarget.pos.x + offsetX, 
+        this.laserTarget.pos.y + offsetY
+      );
+      
+      // Create gradient for better visual effect
+      const gradient = ctx.createLinearGradient(
+        this.pos.x, this.pos.y, 
+        this.laserTarget.pos.x, this.laserTarget.pos.y
+      );
+      
+      gradient.addColorStop(0, `rgba(255, 255, 0, ${this.laserAlpha})`);
+      gradient.addColorStop(0.5, `rgba(255, 200, 0, ${this.laserAlpha * 0.8})`);
+      gradient.addColorStop(1, `rgba(255, 255, 0, ${this.laserAlpha})`);
+      
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = 2 + Math.random() * 2; // Variable width for effect
+      ctx.stroke();
+    }
+    
     if (sel) {
       ctx.strokeStyle = "grey";
       ctx.beginPath();
@@ -307,16 +378,10 @@ class Tower {
   }
   
   upgrade(stat) {
-    if (this.level < this.maxUpgrades) {
-      if (stat === "damage") this.damage += Math.floor(this.damage * 0.5);
-      else if (stat === "range") this.range += 10;
-      else if (stat === "cooldown") this.cooldown = Math.max(20, this.cooldown - 10);
-      this.level++;
-    } else if (!this.specialAbilityUnlocked) {
-      this.specialAbilityUnlocked = true;
-      this.damage += 50; this.range += 50;
-      this.cooldown = Math.max(10, this.cooldown - 15);
-    }
+    if (stat === "damage") this.damage += Math.floor(this.damage * 0.5);
+    else if (stat === "range") this.range += 10;
+    else if (stat === "cooldown") this.cooldown = Math.max(20, this.cooldown - 10);
+    this.level++;
     updateToolbar();
   }
 }
@@ -332,9 +397,7 @@ class Projectile {
           dx = aimPos.x - startPos.x,
           dy = aimPos.y - startPos.y,
           dist = Math.hypot(dx, dy);
-    this.dx = dist ? dx/distance(dx,dy) : 0;
-    this.dy = dist ? dy/distance(dx,dy) : 0;
-    // Alternatively, use:
+    // Use the correct calculation for direction vector
     this.dx = dist ? dx/dist : 0;
     this.dy = dist ? dy/dist : 0;
     this.radius = 5;
@@ -479,6 +542,7 @@ function updateToolbar() {
              <div><strong>Damage:</strong> ${selectedTower.damage}</div>
              <div><strong>Range:</strong> ${selectedTower.range}</div>
              <div><strong>Cooldown:</strong> ${selectedTower.cooldown}</div>
+             <div><strong>Bullet Speed:</strong> ${(selectedTower.bulletSpeed + towerBulletSpeedBonus).toFixed(1)}</div>
              ${
                selectedTower.level < selectedTower.maxUpgrades
                ? `<button id="upgradeDamage">Upgrade Damage ($40)</button>
@@ -492,6 +556,9 @@ function updateToolbar() {
              <button id="cancelSelectionButton">Cancel</button>`;
   } else {
     html += `<button class="shop-item" data-type="basic">Basic Defender ($50)</button>`;
+    if (currentRound >= 20) {
+      html += `<button class="shop-item" data-type="laser">Laser Defender ($85)</button>`;
+    }
     if (currentRound >= 3) {
       html += `<button class="shop-item" data-type="sniper">Sniper Defender ($75)</button>`;
     }
@@ -578,8 +645,17 @@ function updateToolbar() {
 }
 
 function attemptUpgrade(tower, stat) {
-  let cost = (tower.level < tower.maxUpgrades) ? 40 : 60;
-  if (currency >= cost) { currency -= cost; tower.upgrade(stat); }
+  let cost;
+  if (tower.level < tower.maxUpgrades) {
+    cost = 40;
+  } else {
+    cost = 60;
+  }
+  
+  if (currency >= cost) { 
+    currency -= cost; 
+    tower.upgrade(stat); 
+  }
   else alert("Not enough currency for upgrade!");
   updateToolbar();
 }
@@ -739,6 +815,7 @@ function updateGameState() {
       castleExplosion.update();
       if (castleExplosion.isDone()) {
          enemies = [];
+         document.getElementById("coinsEarnedDisplay").textContent = `You earned ${coinsEarnedThisGame} coins this game!`;
          gameOverScreen.style.display = "flex";
          gameContainer.style.display = "none";
       }
@@ -790,7 +867,10 @@ function updateGameState() {
   
   if (inRound && enemiesToSpawn === 0 && enemies.length === 0) {
     currency += 5;
-    if (!cheatsUsed) { coins += waveCoinsBonus; }
+    if (!cheatsUsed) { 
+      coins += waveCoinsBonus; 
+      coinsEarnedThisGame += waveCoinsBonus;
+    }
     inRound = false;
     updateToolbar();
     saveGameProgress();
@@ -816,6 +896,7 @@ function drawGame() {
     else if (placingTowerType === "splash") { tempRange = 120; tempColor = "rgba(0,128,0,0.3)"; }
     else if (placingTowerType === "slow") { tempRange = 80; tempColor = "rgba(0,255,255,0.3)"; }
     else if (placingTowerType === "smart") { tempRange = 180; tempColor = "rgba(255,215,0,0.3)"; }
+    else if (placingTowerType === "laser") { tempRange = 130; tempColor = "rgba(255,105,0,0.3)"; }
     ctx.fillStyle = tempColor;
     ctx.beginPath();
     ctx.arc(previewPos.x, previewPos.y, 15, 0, Math.PI*2);
@@ -874,6 +955,9 @@ document.getElementById("upgradesButton").addEventListener("click", function() {
   updateUpgradeShopUI();
   upgradeShopScreen.style.display = "flex";
 });
+document.getElementById("settingsButton").addEventListener("click", function() {
+  showSettingsPanel();
+});
 document.getElementById("backFromCreditsButton").addEventListener("click", function() {
   creditsScreen.style.display = "none";
   titleScreen.style.display = "flex";
@@ -885,6 +969,20 @@ document.getElementById("backFromUpgradeButton").addEventListener("click", funct
 document.getElementById("backToTitleButton").addEventListener("click", function() {
   gameOverScreen.style.display = "none";
   titleScreen.style.display = "flex";
+  resetGame(); // Add this line to ensure game state is reset properly
+});
+
+document.getElementById("applySettingsButton").addEventListener("click", function() {
+  theme = document.getElementById("themeSelector").value;
+  applySettings();
+});
+document.getElementById("backFromSettingsButton").addEventListener("click", function() {
+  settingsScreen.style.display = "none";
+  titleScreen.style.display = "flex";
+});
+
+document.getElementById("gameSpeedSlider").addEventListener("input", function() {
+  document.getElementById("gameSpeedValue").textContent = parseFloat(this.value).toFixed(2) + "x";
 });
 
 /*****************************
@@ -935,6 +1033,50 @@ function buyUpgrade(itemId) {
 }
 
 /*****************************
+       SETTINGS PANEL
+*****************************/
+function showSettingsPanel() {
+  titleScreen.style.display = "none";
+  settingsScreen.style.display = "flex";
+}
+
+function applySettings() {
+  // Apply theme
+  document.body.classList = theme;
+  
+  // Apply game speed modifier
+  gameSpeedModifier = parseFloat(document.getElementById("gameSpeedSlider").value);
+  
+  saveSettings();
+  settingsScreen.style.display = "none";
+  titleScreen.style.display = "flex";
+}
+
+function saveSettings() {
+  let settings = {
+    theme: theme,
+    gameSpeedModifier: gameSpeedModifier
+  };
+  localStorage.setItem("gameSettings", JSON.stringify(settings));
+}
+
+function loadSettings() {
+  let settings = localStorage.getItem("gameSettings");
+  if (settings) {
+    settings = JSON.parse(settings);
+    theme = settings.theme || "light";
+    gameSpeedModifier = settings.gameSpeedModifier || 1;
+    document.body.classList = theme;
+    if (document.getElementById("gameSpeedSlider")) {
+      document.getElementById("gameSpeedSlider").value = gameSpeedModifier;
+    }
+    if (document.getElementById("themeSelector")) {
+      document.getElementById("themeSelector").value = theme;
+    }
+  }
+}
+
+/*****************************
        RESET & PERSISTENCE
 *****************************/
 function resetGame() {
@@ -956,6 +1098,7 @@ function resetGame() {
   autoStart = false;
   gameOver = false;
   castleExplosion = null;
+  coinsEarnedThisGame = 0;
   updateToolbar();
 }
 
@@ -973,7 +1116,8 @@ function saveGameProgress() {
     startingCashBonus: startingCashBonus,
     enemyHealthMultiplier: enemyHealthMultiplier,
     gameSpeedMax: gameSpeedMax,
-    waveCoinsBonus: waveCoinsBonus
+    waveCoinsBonus: waveCoinsBonus,
+    towerBulletSpeedBonus: towerBulletSpeedBonus
   };
   localStorage.setItem("gameProgress", JSON.stringify(data));
 }
@@ -987,6 +1131,7 @@ function loadGameProgress() {
     enemyHealthMultiplier = data.enemyHealthMultiplier || 1;
     gameSpeedMax = data.gameSpeedMax || 2;
     waveCoinsBonus = data.waveCoinsBonus || 2;
+    towerBulletSpeedBonus = data.towerBulletSpeedBonus || 0;
     if (data.upgrades) {
       for (let key in data.upgrades) {
         if (upgradeItems[key]) {
@@ -1001,4 +1146,5 @@ function loadGameProgress() {
 /*****************************
    INITIALIZE THE GAME
 *****************************/
+loadSettings();
 gameContainer.style.display = "none";

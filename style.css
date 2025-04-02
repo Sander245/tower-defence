@@ -1,6 +1,7 @@
 /* Global reset & basics */
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background-color: #eee; font-family: Arial, sans-serif; }
+body { background-color: #eee; font-family: Arial, sans-serif; transition: all 0.3s; }
+body.dark { background-color: #333; color: #fff; }
 
 /* Game container and canvas */
 #gameContainer {
@@ -14,6 +15,10 @@ body { background-color: #eee; font-family: Arial, sans-serif; }
   background-color: #fff;
   border: 2px solid #000;
 }
+body.dark #gameCanvas {
+  background-color: #111;
+  border-color: #555;
+}
 
 /* Toolbar styling */
 #toolbar {
@@ -24,6 +29,11 @@ body { background-color: #eee; font-family: Arial, sans-serif; }
   border: 1px solid #aaa;
   border-radius: 4px;
 }
+body.dark #toolbar {
+  background-color: #444;
+  color: #fff;
+  border-color: #666;
+}
 
 /* Standard button styling */
 button {
@@ -32,13 +42,35 @@ button {
   padding: 10px 20px;
   font-size: 20px;
   cursor: pointer;
+  background-color: white;
+  color: black;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  transition: all 0.1s;
+}
+button:hover {
+  background-color: white;
+}
+button:active {
+  background-color: #f0f0f0;
+}
+body.dark button {
+  background-color: white;
+  color: black;
+}
+body.dark button:hover {
+  background-color: white;
+}
+body.dark button:active {
+  background-color: #f0f0f0;
 }
 
-/* Fullscreen menu screens – Title, Credits, Upgrades, Game Over */
+/* Fullscreen menu screens – Title, Credits, Upgrades, Game Over, Settings */
 #titleScreen,
 #creditsScreen,
 #upgradeShopScreen,
-#gameOverScreen {
+#gameOverScreen,
+#settingsScreen {
   position: fixed;
   top: 0; left: 0;
   width: 100%;
@@ -51,9 +83,47 @@ button {
   flex-direction: column;
   text-align: center;
 }
+body.dark #titleScreen,
+body.dark #creditsScreen,
+body.dark #upgradeShopScreen,
+body.dark #gameOverScreen,
+body.dark #settingsScreen {
+  background-color: #1a1a1a;
+}
 
 /* Initially, show the title screen */
 #titleScreen { display: flex; }
+
+/* Settings screen styles */
+.settings-container {
+  width: 400px;
+  margin: 20px 0;
+}
+.setting-group {
+  margin: 15px 0;
+  text-align: left;
+}
+.setting-group label {
+  display: block;
+  margin-bottom: 5px;
+}
+.setting-group select, 
+.setting-group input {
+  width: 100%;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+body.dark .setting-group select, 
+body.dark .setting-group input {
+  background-color: #333;
+  color: #fff;
+  border-color: #555;
+}
+#gameSpeedValue {
+  text-align: center;
+  margin-top: 5px;
+}
 
 /* Upgrade shop content arranged in a grid */
 #upgradeShopContent {
