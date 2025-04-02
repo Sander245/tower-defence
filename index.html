@@ -12,6 +12,28 @@
     <button id="startGameButton">Start</button>
     <button id="creditsButton">Credits</button>
     <button id="upgradesButton">Upgrades</button>
+    <button id="settingsButton">Settings</button>
+  </div>
+
+  <!-- SETTINGS SCREEN -->
+  <div id="settingsScreen">
+    <h1>Settings</h1>
+    <div class="settings-container">
+      <div class="setting-group">
+        <label for="themeSelector">Theme:</label>
+        <select id="themeSelector">
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+      <div class="setting-group">
+        <label for="gameSpeedSlider">Game Speed Modifier (for performance):</label>
+        <input type="range" id="gameSpeedSlider" min="0.85" max="1.15" step="0.05" value="1">
+        <div id="gameSpeedValue">1.00x</div>
+      </div>
+    </div>
+    <button id="applySettingsButton">Apply Settings</button>
+    <button id="backFromSettingsButton">Back</button>
   </div>
 
   <!-- CREDITS SCREEN -->
@@ -31,6 +53,7 @@
   <!-- GAME OVER SCREEN -->
   <div id="gameOverScreen">
     <h1>You Died</h1>
+    <p id="coinsEarnedDisplay">You earned 0 coins this game!</p>
     <button id="backToTitleButton">Back to Title</button>
   </div>
 
